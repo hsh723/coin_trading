@@ -320,23 +320,15 @@ async def update_performance_report():
     except Exception as e:
         logger.error(f"성과 리포트 업데이트 실패: {str(e)}")
 
-async def start_bot(bot: TradingBot):
-    """봇 시작"""
-    try:
-        await bot.start()
-        return True
-    except Exception as e:
-        logger.error(f"봇 시작 실패: {str(e)}")
-        return False
-
-async def stop_bot(bot: TradingBot):
+async def stop_bot():
     """봇 중지"""
     try:
-        await bot.stop()
-        return True
+        if st.session_state.bot and st.session_state.bot.is_running:
+            await st.session_state.bot.stop()
+            st.session_state.bot = None
+            st.success("봇이 중지되었습니다.")
     except Exception as e:
-        logger.error(f"봇 중지 실패: {str(e)}")
-        return False
+        st.error(f"봇 중지 실패: {str(e)}")
 
 def save_api_keys(api_key: str, api_secret: str):
     """API 키를 .env 파일에 저장"""
@@ -439,7 +431,7 @@ def main():
                     try:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        success = loop.run_until_complete(start_bot(st.session_state.bot))
+                        success = loop.run_until_complete(st.session_state.bot.start())
                         if success:
                             st.success("트레이딩 봇이 시작되었습니다.")
                         else:
@@ -457,12 +449,7 @@ def main():
                     try:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        success = loop.run_until_complete(stop_bot(st.session_state.bot))
-                        if success:
-                            st.session_state.bot = None
-                            st.success("트레이딩 봇이 중지되었습니다.")
-                        else:
-                            st.error("봇 중지에 실패했습니다.")
+                        loop.run_until_complete(stop_bot())
                     except Exception as e:
                         st.error(f"봇 중지 중 오류 발생: {str(e)}")
                     finally:

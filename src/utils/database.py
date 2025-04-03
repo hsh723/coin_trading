@@ -146,31 +146,42 @@ class DatabaseManager:
             logger.error(f"성과 정보 저장 실패: {str(e)}")
             return False
     
-    def get_trades(self, start_date: Optional[datetime] = None,
-                  end_date: Optional[datetime] = None) -> pd.DataFrame:
-        """거래 정보 조회"""
+    def get_trades(self, symbol: str) -> List[Dict[str, Any]]:
+        """거래 내역 조회"""
         try:
-            query = "SELECT * FROM trades"
-            params = []
-            
-            if start_date and end_date:
-                query += " WHERE timestamp BETWEEN ? AND ?"
-                params.extend([start_date, end_date])
-            elif start_date:
-                query += " WHERE timestamp >= ?"
-                params.append(start_date)
-            elif end_date:
-                query += " WHERE timestamp <= ?"
-                params.append(end_date)
-            
-            query += " ORDER BY timestamp DESC"
+            query = """
+                SELECT 
+                    t.id,
+                    t.symbol,
+                    t.side,
+                    t.price,
+                    t.size,
+                    t.pnl,
+                    t.timestamp
+                FROM trades t
+                WHERE t.symbol = ?
+                ORDER BY t.timestamp DESC
+                LIMIT 100
+            """
             
             with sqlite3.connect(self.db_path) as conn:
-                df = pd.read_sql_query(query, conn, params=params)
-                return df
+                cursor = conn.cursor()
+                cursor.execute(query, (symbol,))
+                trades = cursor.fetchall()
+                
+                return [{
+                    'id': trade[0],
+                    'symbol': trade[1],
+                    'side': trade[2],
+                    'price': float(trade[3]),
+                    'size': float(trade[4]),
+                    'pnl': float(trade[5]) if trade[5] is not None else 0.0,
+                    'timestamp': trade[6]
+                } for trade in trades]
+                
         except Exception as e:
-            logger.error(f"거래 정보 조회 실패: {str(e)}")
-            return pd.DataFrame()
+            self.logger.error(f"거래 내역 조회 실패: {str(e)}")
+            return []
     
     def get_performance(self, start_date: Optional[datetime] = None,
                        end_date: Optional[datetime] = None) -> pd.DataFrame:
