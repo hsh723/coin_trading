@@ -8,6 +8,7 @@ from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import VolumeWeightedAveragePrice
 from ..utils.database import DatabaseManager
+import ta
 
 class TechnicalAnalyzer:
     """기술적 분석기 클래스"""
@@ -16,6 +17,100 @@ class TechnicalAnalyzer:
         """기술적 분석기 초기화"""
         self.logger = logging.getLogger(__name__)
         self.db = db
+        
+    def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """기술적 지표 계산"""
+        try:
+            # 이동평균선
+            df['ma20'] = ta.trend.sma_indicator(df['close'], window=20)
+            df['ma50'] = ta.trend.sma_indicator(df['close'], window=50)
+            df['ma200'] = ta.trend.sma_indicator(df['close'], window=200)
+            
+            # RSI
+            df['rsi'] = ta.momentum.rsi(df['close'], window=14)
+            
+            # MACD
+            macd = ta.trend.MACD(df['close'])
+            df['macd'] = macd.macd()
+            df['macd_signal'] = macd.macd_signal()
+            df['macd_hist'] = macd.macd_diff()
+            
+            # 볼린저 밴드
+            bollinger = ta.volatility.BollingerBands(df['close'])
+            df['bb_upper'] = bollinger.bollinger_hband()
+            df['bb_middle'] = bollinger.bollinger_mavg()
+            df['bb_lower'] = bollinger.bollinger_lband()
+            
+            # ADX
+            adx = ta.trend.ADXIndicator(df['high'], df['low'], df['close'])
+            df['adx'] = adx.adx()
+            
+            # ATR
+            df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'])
+            
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"기술적 지표 계산 실패: {str(e)}")
+            return df
+            
+    def calculate_volatility(self, df: pd.DataFrame) -> float:
+        """변동성 계산"""
+        try:
+            return df['atr'].iloc[-1] / df['close'].iloc[-1]
+        except Exception as e:
+            self.logger.error(f"변동성 계산 실패: {str(e)}")
+            return 0.0
+            
+    def calculate_trend_strength(self, df: pd.DataFrame) -> float:
+        """추세 강도 계산"""
+        try:
+            return df['adx'].iloc[-1] / 100.0
+        except Exception as e:
+            self.logger.error(f"추세 강도 계산 실패: {str(e)}")
+            return 0.0
+            
+    def generate_signals(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """거래 신호 생성"""
+        try:
+            current_price = df['close'].iloc[-1]
+            rsi = df['rsi'].iloc[-1]
+            macd = df['macd'].iloc[-1]
+            macd_signal = df['macd_signal'].iloc[-1]
+            adx = df['adx'].iloc[-1]
+            
+            # 신호 강도 계산
+            signal_strength = 0.0
+            signal = 'neutral'
+            
+            # RSI 기반 신호
+            if rsi < 30:  # 과매도
+                signal_strength += 0.3
+                signal = 'buy'
+            elif rsi > 70:  # 과매수
+                signal_strength -= 0.3
+                signal = 'sell'
+                
+            # MACD 기반 신호
+            if macd > macd_signal:  # 골든크로스
+                signal_strength += 0.3
+                signal = 'buy'
+            elif macd < macd_signal:  # 데드크로스
+                signal_strength -= 0.3
+                signal = 'sell'
+                
+            # ADX 기반 신호 강화
+            if adx > 25:  # 강한 추세
+                signal_strength *= 1.2
+                
+            return {
+                'signal': signal,
+                'strength': abs(signal_strength)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"거래 신호 생성 실패: {str(e)}")
+            return {'signal': 'neutral', 'strength': 0.0}
         
     def calculate_indicators(self, data: pd.DataFrame) -> Dict:
         """모든 기술적 지표 계산"""
@@ -383,142 +478,6 @@ class TechnicalAnalyzer:
             
         return signals
 
-    def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        기술적 지표 계산
-        
-        Args:
-            df (pd.DataFrame): OHLCV 데이터
-            
-        Returns:
-            pd.DataFrame: 지표가 추가된 데이터프레임
-        """
-        try:
-            # RSI
-            df['rsi'] = ta.rsi(df['close'], length=14)
-            
-            # MACD
-            macd = ta.macd(df['close'])
-            df['macd'] = macd['MACD_12_26_9']
-            df['macd_signal'] = macd['MACDs_12_26_9']
-            df['macd_hist'] = macd['MACDh_12_26_9']
-            
-            # 볼린저 밴드
-            bbands = ta.bbands(df['close'], length=20)
-            df['bb_upper'] = bbands['BBU_20_2.0']
-            df['bb_middle'] = bbands['BBM_20_2.0']
-            df['bb_lower'] = bbands['BBL_20_2.0']
-            
-            # 이동평균선
-            df['sma_20'] = ta.sma(df['close'], length=20)
-            df['sma_50'] = ta.sma(df['close'], length=50)
-            df['sma_200'] = ta.sma(df['close'], length=200)
-            
-            # Stochastic
-            stoch = ta.stoch(df['high'], df['low'], df['close'])
-            df['stoch_k'] = stoch['STOCHk_14_3_3']
-            df['stoch_d'] = stoch['STOCHd_14_3_3']
-            
-            # ADX
-            df['adx'] = ta.adx(df['high'], df['low'], df['close'])['ADX_14']
-            
-            # ATR
-            df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
-            
-            self.logger.info("기술적 지표 계산 완료")
-            return df
-            
-        except Exception as e:
-            self.logger.error(f"기술적 지표 계산 실패: {str(e)}")
-            return df
-            
-    def generate_signals(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """
-        거래 신호 생성
-        
-        Args:
-            df (pd.DataFrame): 지표가 포함된 데이터프레임
-            
-        Returns:
-            Dict[str, Any]: 거래 신호
-        """
-        try:
-            if df.empty:
-                return {'signal': 'neutral', 'strength': 0.0}
-                
-            latest = df.iloc[-1]
-            
-            # RSI 신호
-            rsi_signal = 'neutral'
-            if latest['rsi'] > 70:
-                rsi_signal = 'sell'
-            elif latest['rsi'] < 30:
-                rsi_signal = 'buy'
-                
-            # MACD 신호
-            macd_signal = 'neutral'
-            if latest['macd'] > latest['macd_signal'] and df.iloc[-2]['macd'] <= df.iloc[-2]['macd_signal']:
-                macd_signal = 'buy'
-            elif latest['macd'] < latest['macd_signal'] and df.iloc[-2]['macd'] >= df.iloc[-2]['macd_signal']:
-                macd_signal = 'sell'
-                
-            # 볼린저 밴드 신호
-            bb_signal = 'neutral'
-            if latest['close'] > latest['bb_upper']:
-                bb_signal = 'sell'
-            elif latest['close'] < latest['bb_lower']:
-                bb_signal = 'buy'
-                
-            # 스토캐스틱 신호
-            stoch_signal = 'neutral'
-            if latest['stoch_k'] > 80 and latest['stoch_d'] > 80:
-                stoch_signal = 'sell'
-            elif latest['stoch_k'] < 20 and latest['stoch_d'] < 20:
-                stoch_signal = 'buy'
-                
-            # 이동평균선 신호
-            ma_signal = 'neutral'
-            if latest['sma_20'] > latest['sma_50'] and df.iloc[-2]['sma_20'] <= df.iloc[-2]['sma_50']:
-                ma_signal = 'buy'
-            elif latest['sma_20'] < latest['sma_50'] and df.iloc[-2]['sma_20'] >= df.iloc[-2]['sma_50']:
-                ma_signal = 'sell'
-                
-            # 신호 통합
-            signals = [rsi_signal, macd_signal, bb_signal, stoch_signal, ma_signal]
-            buy_count = signals.count('buy')
-            sell_count = signals.count('sell')
-            
-            if buy_count > sell_count:
-                final_signal = 'buy'
-                strength = buy_count / len(signals)
-            elif sell_count > buy_count:
-                final_signal = 'sell'
-                strength = sell_count / len(signals)
-            else:
-                final_signal = 'neutral'
-                strength = 0.0
-                
-            return {
-                'signal': final_signal,
-                'strength': strength,
-                'indicators': {
-                    'rsi': latest['rsi'],
-                    'macd': latest['macd'],
-                    'bb_upper': latest['bb_upper'],
-                    'bb_lower': latest['bb_lower'],
-                    'stoch_k': latest['stoch_k'],
-                    'stoch_d': latest['stoch_d'],
-                    'sma_20': latest['sma_20'],
-                    'sma_50': latest['sma_50'],
-                    'adx': latest['adx'],
-                    'atr': latest['atr']
-                }
-            }
-            
-        except Exception as e:
-            self.logger.error(f"거래 신호 생성 실패: {str(e)}")
-            return {'signal': 'neutral', 'strength': 0.0}
-            
     def calculate_support_resistance(self, df: pd.DataFrame, window: int = 20) -> Dict[str, List[float]]:
         """
         지지선과 저항선 계산
@@ -547,44 +506,4 @@ class TechnicalAnalyzer:
             
         except Exception as e:
             self.logger.error(f"지지선/저항선 계산 실패: {str(e)}")
-            return {'support': [], 'resistance': []}
-            
-    def calculate_volatility(self, df: pd.DataFrame, window: int = 20) -> float:
-        """
-        변동성 계산
-        
-        Args:
-            df (pd.DataFrame): OHLCV 데이터
-            window (int): 윈도우 크기
-            
-        Returns:
-            float: 변동성
-        """
-        try:
-            returns = df['close'].pct_change()
-            volatility = returns.rolling(window=window).std() * (252 ** 0.5)  # 연간화
-            return volatility.iloc[-1]
-            
-        except Exception as e:
-            self.logger.error(f"변동성 계산 실패: {str(e)}")
-            return 0.0
-            
-    def calculate_trend_strength(self, df: pd.DataFrame) -> float:
-        """
-        추세 강도 계산
-        
-        Args:
-            df (pd.DataFrame): OHLCV 데이터
-            
-        Returns:
-            float: 추세 강도 (0.0 ~ 1.0)
-        """
-        try:
-            # ADX 값 정규화
-            adx = df['adx'].iloc[-1]
-            trend_strength = min(adx / 100, 1.0)  # ADX는 0~100 사이의 값
-            return max(0.0, trend_strength)
-            
-        except Exception as e:
-            self.logger.error(f"추세 강도 계산 실패: {str(e)}")
-            return 0.0 
+            return {'support': [], 'resistance': []} 

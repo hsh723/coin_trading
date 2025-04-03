@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import pandas as pd
 from ..exchange.binance_exchange import BinanceExchange
@@ -382,4 +382,48 @@ class TradingBot:
             error_msg = f"상태 조회 실패: {str(e)}"
             self.logger.error(error_msg)
             self.database.save_log('ERROR', error_msg, 'trading_bot')
-            return {} 
+            return {}
+            
+    def get_market_data(self) -> Dict[str, Any]:
+        """시장 데이터 조회"""
+        try:
+            if not self.market_data:
+                return {}
+                
+            return {
+                'current_price': self.market_data['current_price'],
+                'volatility': self.market_data['volatility'],
+                'trend_strength': self.market_data['trend_strength'],
+                'indicators': self.technical_analyzer.calculate_indicators(self.market_data['ohlcv'])
+            }
+            
+        except Exception as e:
+            self.logger.error(f"시장 데이터 조회 실패: {str(e)}")
+            return {}
+            
+    def get_positions(self) -> List[Dict[str, Any]]:
+        """포지션 정보 조회"""
+        try:
+            if not self.current_position:
+                return []
+                
+            return [{
+                'symbol': self.config['symbol'],
+                'entry_price': self.current_position['entry_price'],
+                'size': self.current_position['size'],
+                'stop_loss': self.current_position['stop_loss'],
+                'take_profit': self.current_position['take_profit'],
+                'pnl': (self.market_data['current_price'] - self.current_position['entry_price']) * self.current_position['size']
+            }]
+            
+        except Exception as e:
+            self.logger.error(f"포지션 정보 조회 실패: {str(e)}")
+            return []
+            
+    def get_trades(self) -> List[Dict[str, Any]]:
+        """거래 내역 조회"""
+        try:
+            return self.database.get_trades(self.config['symbol'])
+        except Exception as e:
+            self.logger.error(f"거래 내역 조회 실패: {str(e)}")
+            return [] 

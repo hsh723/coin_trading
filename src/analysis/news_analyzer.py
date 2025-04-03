@@ -17,6 +17,7 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
 from bs4 import BeautifulSoup
 import feedparser
+import pytz
 
 # 내부 모듈 import
 from ..data.news_collector import news_collector
@@ -54,7 +55,7 @@ class NewsAnalyzer:
             'bloomberg': 'https://www.bloomberg.com/markets/rss',
             'reuters': 'https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best',
             'wsj': 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
-            'cnbc': 'https://www.cnbc.com/id/10000664/device/rss/rss.html',
+            'cnbc': 'https://www.cnbc.com/id/19746125/device/rss/rss.xml',
             'marketwatch': 'https://www.marketwatch.com/rss/topstories'
         }
         
@@ -70,6 +71,32 @@ class NewsAnalyzer:
             'api_key': None  # NewsAPI 키는 환경 변수에서 가져오도록 설정
         }
         
+    def _parse_date(self, date_str: str) -> datetime:
+        """날짜 문자열 파싱"""
+        try:
+            # 다양한 날짜 형식 처리
+            formats = [
+                '%a, %d %b %Y %H:%M:%S %Z',
+                '%a, %d %b %Y %H:%M:%S %z',
+                '%Y-%m-%dT%H:%M:%S%z',
+                '%Y-%m-%d %H:%M:%S'
+            ]
+            
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    if dt.tzinfo is None:
+                        dt = pytz.UTC.localize(dt)
+                    return dt
+                except ValueError:
+                    continue
+                    
+            raise ValueError(f"지원하지 않는 날짜 형식: {date_str}")
+            
+        except Exception as e:
+            self.logger.error(f"날짜 파싱 실패: {str(e)}")
+            return datetime.now(pytz.UTC)
+        
     def fetch_news_from_rss(self) -> List[Dict]:
         """RSS 피드에서 뉴스 수집"""
         all_news = []
@@ -82,7 +109,7 @@ class NewsAnalyzer:
                     news_item = {
                         'title': entry.title,
                         'link': entry.link,
-                        'timestamp': datetime.strptime(entry.published, '%a, %d %b %Y %H:%M:%S %z'),
+                        'timestamp': self._parse_date(entry.published),
                         'source': source,
                         'summary': entry.get('summary', ''),
                         'category': 'crypto' if source in ['coindesk', 'cointelegraph', 'cryptonews'] else 'economy'
@@ -208,7 +235,7 @@ class NewsAnalyzer:
                     news_item = {
                         'title': article['title'],
                         'link': article['url'],
-                        'timestamp': datetime.strptime(article['publishedAt'], '%Y-%m-%dT%H:%M:%SZ'),
+                        'timestamp': self._parse_date(article['publishedAt']),
                         'source': article['source']['name'],
                         'summary': article.get('description', ''),
                         'category': 'economy',
@@ -243,7 +270,7 @@ class NewsAnalyzer:
                 news_item = {
                     'title': item['title'],
                     'link': item['url'],
-                    'timestamp': datetime.fromtimestamp(item['published_on']),
+                    'timestamp': self._parse_date(item['published_on']),
                     'source': 'cryptocompare',
                     'summary': item.get('body', ''),
                     'category': 'crypto'
