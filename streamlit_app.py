@@ -521,8 +521,9 @@ def main_dashboard():
     
     # 거래 내역
     st.header("거래 내역")
-    if not st.session_state.trades.empty:
-        st.dataframe(st.session_state.trades, use_container_width=True)
+    if st.session_state.trades:  # 리스트가 비어있지 않은지 확인
+        df = pd.DataFrame(st.session_state.trades)
+        st.dataframe(df, use_container_width=True)
     else:
         st.info("거래 내역이 없습니다.")
     
