@@ -259,29 +259,56 @@ def save_trading_config(config):
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(config, f)
 
+def get_sample_market_data():
+    """샘플 시장 데이터 생성"""
+    now = datetime.now()
+    dates = pd.date_range(end=now, periods=100, freq='1H')
+    base_price = 50000  # BTC/USDT 기준 가격
+    
+    data = {
+        'timestamp': dates,
+        'open': [base_price * (1 + 0.001 * i) for i in range(100)],
+        'high': [base_price * (1 + 0.002 * i) for i in range(100)],
+        'low': [base_price * (1 - 0.001 * i) for i in range(100)],
+        'close': [base_price * (1 + 0.0005 * i) for i in range(100)],
+        'volume': [1000 * (1 + 0.01 * i) for i in range(100)]
+    }
+    
+    df = pd.DataFrame(data)
+    df.set_index('timestamp', inplace=True)
+    return df
+
 def update_market_data(exchange):
     """시장 데이터 업데이트"""
     try:
-        # 기존 코드에서 수정
-        data = {
-            "timestamp": [],
-            "open": [],
-            "high": [],
-            "low": [],
-            "close": [],
-            "volume": []
-        }
-        # 데이터 준비 후 DataFrame 생성
-        df = pd.DataFrame(data)
-        st.session_state.market_data = df
-        return True
+        with st.spinner("시장 데이터를 불러오는 중..."):
+            # API에서 데이터 가져오기 시도
+            ohlcv = exchange.fetch_ohlcv('BTC/USDT', '1h', 100)
+            
+            if ohlcv:
+                df = pd.DataFrame(
+                    ohlcv,
+                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                )
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df.set_index('timestamp', inplace=True)
+                st.session_state.market_data = df
+                add_log("시장 데이터 업데이트 완료")
+                return True
+            else:
+                # API 데이터가 없으면 샘플 데이터 사용
+                st.session_state.market_data = get_sample_market_data()
+                add_log("샘플 시장 데이터 사용", "WARNING")
+                return True
+                
     except Exception as e:
         error_msg = f"시장 데이터 업데이트 오류: {str(e)}"
-        try:
-            add_log(error_msg, "ERROR")
-        except:
-            print(error_msg)  # 로깅 실패 시 콘솔에라도 출력
-        return False
+        add_log(error_msg, "ERROR")
+        
+        # 오류 발생 시 샘플 데이터 사용
+        st.session_state.market_data = get_sample_market_data()
+        add_log("샘플 시장 데이터 사용", "WARNING")
+        return True
 
 def update_positions(exchange):
     """포지션 정보 업데이트"""
@@ -447,23 +474,30 @@ def stop_trading_loop():
 
 def render_chart():
     """차트 렌더링"""
-    if st.session_state.market_data is not None and not st.session_state.market_data.empty:
-        fig = go.Figure(data=[go.Candlestick(
-            x=st.session_state.market_data.index,
-            open=st.session_state.market_data['open'],
-            high=st.session_state.market_data['high'],
-            low=st.session_state.market_data['low'],
-            close=st.session_state.market_data['close']
-        )])
-        
-        fig.update_layout(
-            title='BTC/USDT 캔들스틱 차트',
-            yaxis_title='가격',
-            xaxis_title='시간',
-            template='plotly_dark'
-        )
-        
-        return fig
+    if st.session_state.market_data is not None:
+        try:
+            fig = go.Figure(data=[go.Candlestick(
+                x=st.session_state.market_data.index,
+                open=st.session_state.market_data['open'],
+                high=st.session_state.market_data['high'],
+                low=st.session_state.market_data['low'],
+                close=st.session_state.market_data['close']
+            )])
+            
+            fig.update_layout(
+                title='BTC/USDT 캔들스틱 차트',
+                yaxis_title='가격',
+                xaxis_title='시간',
+                template='plotly_dark',
+                height=500,
+                margin=dict(l=10, r=10, t=50, b=10),
+                xaxis_rangeslider_visible=False
+            )
+            
+            return fig
+        except Exception as e:
+            st.error(f"차트 생성 오류: {str(e)}")
+            return None
     else:
         st.warning("시장 데이터가 없습니다.")
         return None
@@ -511,29 +545,30 @@ def main_dashboard():
     
     with metric_cols[0]:
         st.metric("총 거래 횟수", st.session_state.performance['total_trades'])
-        st.metric("일일 수익률", st.session_state.performance['daily_return'])
+        st.metric("일일 수익률", f"{st.session_state.performance['daily_return']:.2f}%")
     
     if cols > 1:
         with metric_cols[1]:
-            st.metric("주간 수익률", st.session_state.performance['weekly_return'])
-            st.metric("월간 수익률", st.session_state.performance['monthly_return'])
+            st.metric("주간 수익률", f"{st.session_state.performance['weekly_return']:.2f}%")
+            st.metric("월간 수익률", f"{st.session_state.performance['monthly_return']:.2f}%")
         
         with metric_cols[2]:
-            st.metric("총 수익", st.session_state.performance['total_pnl'])
-            if st.session_state.positions:  # 리스트가 비어있지 않은지 확인
+            st.metric("총 수익", f"${st.session_state.performance['total_pnl']:.2f}")
+            if st.session_state.positions:
                 st.metric("현재 포지션", st.session_state.positions[0].get('symbol', 'N/A'))
     
     # 캔들스틱 차트
     st.header("차트")
-    fig = render_chart()
-    if fig:
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("차트 데이터를 불러오는 중입니다...")
+    with st.spinner("차트를 불러오는 중..."):
+        fig = render_chart()
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("차트 데이터를 불러오는 중입니다...")
     
     # 거래 내역
     st.header("거래 내역")
-    if st.session_state.trades:  # 리스트가 비어있지 않은지 확인
+    if st.session_state.trades:
         df = pd.DataFrame(st.session_state.trades)
         st.dataframe(df, use_container_width=True)
     else:
