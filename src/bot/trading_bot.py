@@ -48,13 +48,18 @@ class TradingBot(ABC):
         
         self.market_data = None
         self.current_position = None
-        self.is_running = False
+        self._is_running = False
         self.last_update = None
         
     @property
     def is_running(self) -> bool:
         """봇 실행 상태 반환"""
-        return self.is_running
+        return self._is_running
+        
+    @is_running.setter
+    def is_running(self, value: bool) -> None:
+        """봇 실행 상태 설정"""
+        self._is_running = value
         
     async def start(self) -> None:
         """트레이딩 봇 시작"""
