@@ -19,7 +19,7 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 from ..utils.logger import setup_logger
 import requests
 from bs4 import BeautifulSoup
-from database import Database
+from ..utils.database import Database
 import feedparser
 
 logger = logging.getLogger(__name__)
