@@ -287,26 +287,38 @@ class Database:
         except Exception as e:
             self.logger.error(f"로그 저장 실패: {str(e)}")
             
-    def get_trades(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """
-        거래 내역 조회
-        
-        Args:
-            limit (int): 조회할 최대 개수
-            
-        Returns:
-            List[Dict[str, Any]]: 거래 내역 리스트
-        """
+    def get_trades(self, symbol: str) -> List[Dict[str, Any]]:
+        """거래 내역 조회"""
         try:
+            query = """
+                SELECT 
+                    t.timestamp,
+                    t.symbol,
+                    t.side,
+                    t.price,
+                    t.size,
+                    t.pnl,
+                    t.status
+                FROM trades t
+                WHERE t.symbol = ?
+                ORDER BY t.timestamp DESC
+                LIMIT 100
+            """
+            
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT * FROM trades
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                ''', (limit,))
-                columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+                cursor.execute(query, (symbol,))
+                trades = cursor.fetchall()
+                
+                return [{
+                    'timestamp': trade[0],
+                    'symbol': trade[1],
+                    'side': trade[2],
+                    'price': float(trade[3]),
+                    'size': float(trade[4]),
+                    'pnl': float(trade[5]) if trade[5] is not None else 0.0,
+                    'status': trade[6]
+                } for trade in trades]
                 
         except Exception as e:
             self.logger.error(f"거래 내역 조회 실패: {str(e)}")

@@ -14,11 +14,6 @@ import time
 from pathlib import Path
 from dotenv import load_dotenv
 import asyncio
-from src.bot.trading_bot import TradingBot
-from src.utils.logger import setup_logger
-from src.analysis.performance_analyzer import PerformanceAnalyzer
-from src.database.database import Database
-from typing import Dict, Any
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -33,12 +28,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # 모듈 임포트
 try:
+    from src.bot.trading_bot import TradingBot
+    from src.utils.logger import setup_logger
+    from src.analysis.performance_analyzer import PerformanceAnalyzer
+    from src.database.database import Database
     from src.utils.database import DatabaseManager
     from src.utils.auth import AuthManager
-    from src.utils.logger import logger
-    from src.exchange.binance import BinanceExchange
-    from src.strategies.integrated import IntegratedStrategy
-    from src.risk.manager import RiskManager
+    from src.exchange.binance_exchange import BinanceExchange
+    from src.strategy.integrated_strategy import IntegratedStrategy
+    from src.risk.risk_manager import RiskManager
     from src.utils.telegram import TelegramNotifier
 except ImportError as e:
     st.error(f"모듈 임포트 오류: {str(e)}")
