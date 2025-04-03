@@ -163,7 +163,7 @@ statsmodels==0.14.4
 streamlit>=1.22.0
 structlog==25.2.0
 ta==0.11.0
-ta-lib @ file:///C:/coin_Trading/ta_lib-0.6.3-cp39-cp39-win_amd64.whl#sha256=efa544865aa7e8222d43de56c9e4ebea6e8265923ec8f49bc9331cffc281e9e1
+ta-lib @ https://github.com/TA-Lib/ta-lib/archive/refs/tags/v0.4.0.tar.gz
 tenacity==9.1.2
 terminado==0.18.1
 textblob==0.19.0
