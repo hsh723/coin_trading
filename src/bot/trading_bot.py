@@ -1,6 +1,8 @@
 import asyncio
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+from abc import ABC, abstractmethod
 import pandas as pd
 from ..exchange.binance_exchange import BinanceExchange
 from ..analysis.news_analyzer import NewsAnalyzer
@@ -9,9 +11,11 @@ from ..strategy.integrated_strategy import IntegratedStrategy
 from ..risk.risk_manager import RiskManager
 from ..database.database import Database
 from ..utils.logger import setup_logger
+from ..utils.database import DatabaseManager
+from ..utils.telegram import TelegramNotifier
 
-class TradingBot:
-    """트레이딩 봇 클래스"""
+class TradingBot(ABC):
+    """트레이딩 봇 기본 클래스"""
     
     def __init__(self, config: Dict[str, Any]):
         """
@@ -24,7 +28,7 @@ class TradingBot:
         self.config = config
         
         # 데이터베이스 초기화
-        self.database = Database()
+        self.database = DatabaseManager()
         
         # 컴포넌트 초기화
         self.exchange = BinanceExchange(
@@ -39,6 +43,10 @@ class TradingBot:
         self.risk_manager = RiskManager(
             initial_capital=config.get('initial_capital', 10000.0)
         )
+        self.telegram = TelegramNotifier(
+            token=config.get('telegram_token'),
+            chat_id=config.get('telegram_chat_id')
+        )
         
         # 상태 변수
         self._is_running = False
@@ -46,6 +54,7 @@ class TradingBot:
         self.last_signal = None
         self.market_data = None
         self._task = None
+        self.last_update = None
         
     @property
     def is_running(self) -> bool:
@@ -139,9 +148,6 @@ class TradingBot:
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
-            
-            # 기술적 지표 계산
-            df = self.technical_analyzer.calculate_indicators(df)
             
             # 시장 데이터 업데이트
             self.market_data = {

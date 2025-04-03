@@ -23,10 +23,18 @@ class IntegratedStrategy:
         """거래 신호 생성"""
         try:
             if not market_data or 'ohlcv' not in market_data:
-                return {'signal': 'neutral', 'strength': 0.0}
+                self.logger.warning("시장 데이터가 없습니다.")
+                return {
+                    'signal': 'neutral',
+                    'strength': 0.0,
+                    'technical': {'signal': 'neutral', 'strength': 0.0},
+                    'news': {'sentiment': 0.0}
+                }
                 
+            df = market_data['ohlcv']
+            
             # 기술적 분석 신호
-            technical_signal = self.technical_analyzer.analyze(market_data['ohlcv'])
+            technical_signal = self.technical_analyzer.analyze(df)
             
             # 뉴스 분석 신호
             news_signal = self.news_analyzer.analyze(market_data['symbol'])
@@ -35,19 +43,33 @@ class IntegratedStrategy:
             if technical_signal['signal'] == 'buy' and news_signal['sentiment'] > 0:
                 return {
                     'signal': 'buy',
-                    'strength': (technical_signal['strength'] + news_signal['sentiment']) / 2
+                    'strength': (technical_signal['strength'] + news_signal['sentiment']) / 2,
+                    'technical': technical_signal,
+                    'news': news_signal
                 }
             elif technical_signal['signal'] == 'sell' and news_signal['sentiment'] < 0:
                 return {
                     'signal': 'sell',
-                    'strength': (technical_signal['strength'] + abs(news_signal['sentiment'])) / 2
+                    'strength': (technical_signal['strength'] + abs(news_signal['sentiment'])) / 2,
+                    'technical': technical_signal,
+                    'news': news_signal
                 }
             else:
-                return {'signal': 'neutral', 'strength': 0.0}
+                return {
+                    'signal': 'neutral',
+                    'strength': 0.0,
+                    'technical': technical_signal,
+                    'news': news_signal
+                }
                 
         except Exception as e:
             self.logger.error(f"거래 신호 생성 실패: {str(e)}")
-            return {'signal': 'neutral', 'strength': 0.0}
+            return {
+                'signal': 'neutral',
+                'strength': 0.0,
+                'technical': {'signal': 'neutral', 'strength': 0.0},
+                'news': {'sentiment': 0.0}
+            }
             
     def calculate_position_size(self, capital: float, risk_per_trade: float, 
                               entry_price: float, stop_loss: float) -> float:
