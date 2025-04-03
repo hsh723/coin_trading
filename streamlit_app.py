@@ -592,6 +592,27 @@ def settings_page():
         save_trading_config(new_config)
         st.success("설정이 저장되었습니다.")
 
+def login_form():
+    """로그인 폼 표시"""
+    st.title("🔒 로그인")
+    
+    with st.form("login_form"):
+        username = st.text_input("사용자 이름")
+        password = st.text_input("비밀번호", type="password")
+        submit = st.form_submit_button("로그인")
+        
+        if submit:
+            # 간단한 예시 - 실제로는 더 안전한 인증 로직이 필요함
+            if username == "admin" and password == "password":
+                st.session_state.authenticated = True
+                st.session_state.username = username
+                st.success("로그인 성공!")
+                st.experimental_rerun()
+            else:
+                st.error("사용자 이름 또는 비밀번호가 올바르지 않습니다.")
+    
+    st.info("기본 계정: 사용자 이름 - admin, 비밀번호 - password")
+
 def main():
     """메인 함수"""
     init_session_state()
