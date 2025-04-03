@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from abc import ABC, abstractmethod
 import pandas as pd
-from ..exchange.binance_exchange import BinanceExchange
+from src.exchange.binance_exchange import BinanceExchange
 from ..analysis.news_analyzer import NewsAnalyzer
 from ..analysis.technical_analyzer import TechnicalAnalyzer
 from ..strategy.integrated_strategy import IntegratedStrategy
@@ -49,7 +49,7 @@ class TradingBot(ABC):
         )
         
         # 상태 변수
-        self._is_running = False
+        self.is_running = False
         self.current_position = None
         self.last_signal = None
         self.market_data = None
@@ -59,16 +59,16 @@ class TradingBot(ABC):
     @property
     def is_running(self) -> bool:
         """봇 실행 상태 반환"""
-        return self._is_running
+        return self.is_running
         
     async def start(self) -> None:
         """트레이딩 봇 시작"""
-        if self._is_running:
+        if self.is_running:
             self.logger.warning("트레이딩 봇이 이미 실행 중입니다.")
             return
             
         try:
-            self._is_running = True
+            self.is_running = True
             self.logger.info("트레이딩 봇 시작")
             self.database.save_log('INFO', '트레이딩 봇 시작', 'trading_bot')
             
@@ -80,15 +80,15 @@ class TradingBot(ABC):
             error_msg = f"트레이딩 봇 시작 실패: {str(e)}"
             self.logger.error(error_msg)
             self.database.save_log('ERROR', error_msg, 'trading_bot')
-            self._is_running = False
+            self.is_running = False
             
     async def stop(self) -> None:
         """트레이딩 봇 중지"""
-        if not self._is_running:
+        if not self.is_running:
             self.logger.warning("트레이딩 봇이 이미 중지되었습니다.")
             return
             
-        self._is_running = False
+        self.is_running = False
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -101,7 +101,7 @@ class TradingBot(ABC):
         
     async def _run_loop(self) -> None:
         """메인 트레이딩 루프"""
-        while self._is_running:
+        while self.is_running:
             try:
                 # 시장 데이터 업데이트
                 await self._update_market_data()
