@@ -7,12 +7,12 @@ from ta.trend import SMAIndicator, MACD, ADXIndicator
 from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import VolumeWeightedAveragePrice
-from database import Database
+from ..utils.database import DatabaseManager
 
 class TechnicalAnalyzer:
     """기술적 분석기 클래스"""
     
-    def __init__(self, db: Database):
+    def __init__(self, db: DatabaseManager):
         """기술적 분석기 초기화"""
         self.logger = logging.getLogger(__name__)
         self.db = db
