@@ -77,6 +77,17 @@ class DatabaseManager:
                     )
                 ''')
                 
+                # 로그 테이블 생성
+                conn.execute('''
+                    CREATE TABLE IF NOT EXISTS logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        level TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
                 conn.commit()
                 logger.info("데이터베이스 초기화 완료")
                 
@@ -323,6 +334,27 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"만료된 세션 삭제 실패: {str(e)}")
             return False
+    
+    def save_log(self, level: str, message: str, source: str) -> None:
+        """
+        로그 저장
+        
+        Args:
+            level (str): 로그 레벨
+            message (str): 로그 메시지
+            source (str): 로그 소스
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO logs (level, message, source)
+                    VALUES (?, ?, ?)
+                ''', (level, message, source))
+                conn.commit()
+                
+        except Exception as e:
+            logger.error(f"로그 저장 실패: {str(e)}")
 
 # 전역 데이터베이스 관리자 인스턴스
 db_manager = DatabaseManager() 
