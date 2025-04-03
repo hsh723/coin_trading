@@ -508,4 +508,5 @@ class NewsAnalyzer:
         }
 
 # 전역 뉴스 분석기 인스턴스
-news_analyzer = NewsAnalyzer() 
+db_manager = DatabaseManager()  # DatabaseManager 인스턴스 생성
+news_analyzer = NewsAnalyzer(db=db_manager)  # db 매개변수 전달 
