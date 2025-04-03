@@ -417,6 +417,14 @@ async def update_performance_report():
     except Exception as e:
         logger.error(f"성과 리포트 업데이트 실패: {str(e)}")
 
+async def start_bot(bot: TradingBot):
+    """봇 시작"""
+    await bot.start()
+
+async def stop_bot(bot: TradingBot):
+    """봇 중지"""
+    await bot.stop()
+
 def main():
     """메인 함수"""
     st.title("암호화폐 트레이딩 봇")
@@ -447,43 +455,38 @@ def main():
         )
         
         # 봇 제어
-        if st.button("봇 시작"):
-            if not st.session_state.bot:
-                config = {
-                    'api_key': api_key,
-                    'api_secret': api_secret,
-                    'symbol': symbol,
-                    'timeframe': timeframe,
-                    'initial_capital': initial_capital,
-                    'testnet': True
-                }
-                st.session_state.bot = TradingBot(config)
-                
-                # 비동기 실행을 위한 이벤트 루프 생성
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                try:
-                    # 봇 시작
-                    loop.run_until_complete(st.session_state.bot.start())
-                    st.success("트레이딩 봇이 시작되었습니다.")
-                except Exception as e:
-                    st.error(f"봇 시작 중 오류 발생: {str(e)}")
-                finally:
-                    loop.close()
-                
-        if st.button("봇 중지"):
-            if st.session_state.bot:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(st.session_state.bot.stop())
-                    st.session_state.bot = None
-                    st.success("트레이딩 봇이 중지되었습니다.")
-                except Exception as e:
-                    st.error(f"봇 중지 중 오류 발생: {str(e)}")
-                finally:
-                    loop.close()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("봇 시작"):
+                if not st.session_state.bot:
+                    config = {
+                        'api_key': api_key,
+                        'api_secret': api_secret,
+                        'symbol': symbol,
+                        'timeframe': timeframe,
+                        'initial_capital': initial_capital,
+                        'testnet': True
+                    }
+                    st.session_state.bot = TradingBot(config)
+                    
+                    try:
+                        # 비동기 실행
+                        asyncio.run(start_bot(st.session_state.bot))
+                        st.success("트레이딩 봇이 시작되었습니다.")
+                    except Exception as e:
+                        st.error(f"봇 시작 중 오류 발생: {str(e)}")
+                        st.session_state.bot = None
+        
+        with col2:
+            if st.button("봇 중지"):
+                if st.session_state.bot:
+                    try:
+                        # 비동기 실행
+                        asyncio.run(stop_bot(st.session_state.bot))
+                        st.session_state.bot = None
+                        st.success("트레이딩 봇이 중지되었습니다.")
+                    except Exception as e:
+                        st.error(f"봇 중지 중 오류 발생: {str(e)}")
     
     # 메인 콘텐츠
     tab1, tab2, tab3, tab4 = st.tabs(["차트", "성과", "포지션", "거래 내역"])
@@ -537,11 +540,15 @@ def main():
     if st.session_state.bot and st.session_state.bot.is_running:
         if st.session_state.last_update is None or \
            (datetime.now() - st.session_state.last_update).seconds >= 5:
-            asyncio.run(update_market_data())
-            asyncio.run(update_positions())
-            asyncio.run(update_trades())
-            asyncio.run(update_performance_report())
-            st.experimental_rerun()
+            try:
+                asyncio.run(update_market_data())
+                asyncio.run(update_positions())
+                asyncio.run(update_trades())
+                asyncio.run(update_performance_report())
+                st.session_state.last_update = datetime.now()
+                st.experimental_rerun()
+            except Exception as e:
+                st.error(f"데이터 업데이트 중 오류 발생: {str(e)}")
 
 if __name__ == "__main__":
     init_session_state()

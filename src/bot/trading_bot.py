@@ -41,57 +41,86 @@ class TradingBot:
         )
         
         # 상태 변수
-        self.is_running = False
+        self._is_running = False
         self.current_position = None
         self.last_signal = None
         self.market_data = None
+        self._task = None
+        
+    @property
+    def is_running(self) -> bool:
+        """봇 실행 상태 반환"""
+        return self._is_running
         
     async def start(self) -> None:
         """트레이딩 봇 시작"""
+        if self._is_running:
+            self.logger.warning("트레이딩 봇이 이미 실행 중입니다.")
+            return
+            
         try:
-            self.is_running = True
+            self._is_running = True
             self.logger.info("트레이딩 봇 시작")
             self.database.save_log('INFO', '트레이딩 봇 시작', 'trading_bot')
             
-            while self.is_running:
-                try:
-                    # 시장 데이터 업데이트
-                    await self._update_market_data()
-                    
-                    # 거래 가능 여부 확인
-                    if not self.risk_manager.can_trade():
-                        self.logger.warning("거래 불가능 상태")
-                        await asyncio.sleep(60)
-                        continue
-                    
-                    # 거래 신호 생성
-                    signal = self.strategy.generate_signal(self.market_data)
-                    
-                    # 포지션 관리
-                    if signal and signal['signal'] != 'neutral':
-                        await self._manage_position(signal)
-                    
-                    # 대기
-                    await asyncio.sleep(self.config.get('interval', 60))
-                    
-                except Exception as e:
-                    error_msg = f"트레이딩 루프 오류: {str(e)}"
-                    self.logger.error(error_msg)
-                    self.database.save_log('ERROR', error_msg, 'trading_bot')
-                    await asyncio.sleep(60)
-                    
+            # 메인 루프를 별도의 태스크로 실행
+            self._task = asyncio.create_task(self._run_loop())
+            await self._task
+            
         except Exception as e:
             error_msg = f"트레이딩 봇 시작 실패: {str(e)}"
             self.logger.error(error_msg)
             self.database.save_log('ERROR', error_msg, 'trading_bot')
-            self.is_running = False
+            self._is_running = False
             
     async def stop(self) -> None:
         """트레이딩 봇 중지"""
-        self.is_running = False
+        if not self._is_running:
+            self.logger.warning("트레이딩 봇이 이미 중지되었습니다.")
+            return
+            
+        self._is_running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+                
         self.logger.info("트레이딩 봇 중지")
         self.database.save_log('INFO', '트레이딩 봇 중지', 'trading_bot')
         
+    async def _run_loop(self) -> None:
+        """메인 트레이딩 루프"""
+        while self._is_running:
+            try:
+                # 시장 데이터 업데이트
+                await self._update_market_data()
+                
+                # 거래 가능 여부 확인
+                if not self.risk_manager.can_trade():
+                    self.logger.warning("거래 불가능 상태")
+                    await asyncio.sleep(60)
+                    continue
+                
+                # 거래 신호 생성
+                signal = self.strategy.generate_signal(self.market_data)
+                
+                # 포지션 관리
+                if signal and signal['signal'] != 'neutral':
+                    await self._manage_position(signal)
+                
+                # 대기
+                await asyncio.sleep(self.config.get('interval', 60))
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                error_msg = f"트레이딩 루프 오류: {str(e)}"
+                self.logger.error(error_msg)
+                self.database.save_log('ERROR', error_msg, 'trading_bot')
+                await asyncio.sleep(60)
+            
     async def _update_market_data(self) -> None:
         """시장 데이터 업데이트"""
         try:
