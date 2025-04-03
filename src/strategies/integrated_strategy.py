@@ -3,7 +3,9 @@ import pandas as pd
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
-import talib
+from ta.trend import SMAIndicator, EMAIndicator
+from ta.volatility import BollingerBands
+from ta.momentum import RSIIndicator, StochasticOscillator
 from scipy import stats
 
 from .base import BaseStrategy, TrendType, TrendInfo, FibonacciLevels, StochasticSignal, TrendlineInfo
@@ -65,33 +67,29 @@ class IntegratedStrategy(BaseStrategy):
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """모든 기술적 지표를 계산합니다."""
         # 이동평균선
-        df['ma_short'] = talib.SMA(df['close'], timeperiod=self.ma_short)
-        df['ma_long'] = talib.SMA(df['close'], timeperiod=self.ma_long)
-        df['ma_200'] = talib.SMA(df['close'], timeperiod=self.ma_200)
+        df['ma_short'] = SMAIndicator(close=df['close'], window=self.ma_short).sma_indicator()
+        df['ma_long'] = SMAIndicator(close=df['close'], window=self.ma_long).sma_indicator()
+        df['ma_200'] = SMAIndicator(close=df['close'], window=self.ma_200).sma_indicator()
         
         # 볼린저 밴드
-        df['bb_upper'], df['bb_middle'], df['bb_lower'] = talib.BBANDS(
-            df['close'],
-            timeperiod=self.bb_period,
-            nbdevup=self.bb_std,
-            nbdevdn=self.bb_std,
-            matype=0
-        )
+        bollinger = BollingerBands(close=df['close'], window=self.bb_period, window_dev=self.bb_std)
+        df['bb_upper'] = bollinger.bollinger_hband()
+        df['bb_middle'] = bollinger.bollinger_mavg()
+        df['bb_lower'] = bollinger.bollinger_lband()
         
         # RSI
-        df['rsi'] = talib.RSI(df['close'], timeperiod=self.rsi_period)
+        df['rsi'] = RSIIndicator(close=df['close'], window=self.rsi_period).rsi()
         
         # 스토캐스틱
-        df['slowk'], df['slowd'] = talib.STOCH(
-            df['high'],
-            df['low'],
-            df['close'],
-            fastk_period=self.stoch_period,
-            slowk_period=3,
-            slowk_matype=0,
-            slowd_period=3,
-            slowd_matype=0
+        stoch = StochasticOscillator(
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            window=self.stoch_period,
+            smooth_window=3
         )
+        df['slowk'] = stoch.stoch()
+        df['slowd'] = stoch.stoch_signal()
         
         # 밴드 폭
         df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']

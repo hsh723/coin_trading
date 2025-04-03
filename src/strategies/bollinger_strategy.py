@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Dict, Any
-import talib
+from ta.trend import SMAIndicator
 
 class BollingerStrategy:
     def __init__(self):
@@ -13,7 +13,7 @@ class BollingerStrategy:
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """이동평균선을 계산합니다."""
         # 200일 이동평균선 계산
-        df['ma_200'] = talib.SMA(df['close'], timeperiod=self.ma_200)
+        df['ma_200'] = SMAIndicator(close=df['close'], window=self.ma_200).sma_indicator()
         
         # 고점/저점 계산
         df['high_peak'] = df['high'].rolling(window=5, center=True).max()

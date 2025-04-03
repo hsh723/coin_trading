@@ -1,10 +1,12 @@
 import pandas as pd
-import pandas_ta as ta
 from typing import Dict, Any, List, Optional
 from ..utils.logger import setup_logger
 import logging
 import numpy as np
-from talib import abstract
+from ta.trend import SMAIndicator, MACD, ADXIndicator
+from ta.momentum import RSIIndicator, StochasticOscillator
+from ta.volatility import BollingerBands, AverageTrueRange
+from ta.volume import VolumeWeightedAveragePrice
 from database import Database
 
 class TechnicalAnalyzer:
@@ -33,15 +35,19 @@ class TechnicalAnalyzer:
     def _calculate_trend_indicators(self, data: pd.DataFrame) -> Dict:
         """추세 지표 계산"""
         # 이동 평균선
-        ma20 = abstract.MA(data, timeperiod=20)
-        ma50 = abstract.MA(data, timeperiod=50)
-        ma200 = abstract.MA(data, timeperiod=200)
+        ma20 = SMAIndicator(close=data['close'], window=20).sma_indicator()
+        ma50 = SMAIndicator(close=data['close'], window=50).sma_indicator()
+        ma200 = SMAIndicator(close=data['close'], window=200).sma_indicator()
         
         # MACD
-        macd, macd_signal, macd_hist = abstract.MACD(data)
+        macd_ind = MACD(close=data['close'])
+        macd = macd_ind.macd()
+        macd_signal = macd_ind.macd_signal()
+        macd_hist = macd_ind.macd_diff()
         
         # ADX
-        adx = abstract.ADX(data)
+        adx_ind = ADXIndicator(high=data['high'], low=data['low'], close=data['close'])
+        adx = adx_ind.adx()
         
         return {
             'ma20': ma20,
@@ -58,51 +64,62 @@ class TechnicalAnalyzer:
     def _calculate_momentum_indicators(self, data: pd.DataFrame) -> Dict:
         """모멘텀 지표 계산"""
         # RSI
-        rsi = abstract.RSI(data)
+        rsi = RSIIndicator(close=data['close']).rsi()
         
         # 스토캐스틱
-        slowk, slowd = abstract.STOCH(data)
-        
-        # CCI
-        cci = abstract.CCI(data)
+        stoch = StochasticOscillator(
+            high=data['high'],
+            low=data['low'],
+            close=data['close']
+        )
+        stoch_k = stoch.stoch()
+        stoch_d = stoch.stoch_signal()
         
         return {
             'rsi': rsi,
             'stochastic': {
-                'k': slowk,
-                'd': slowd
-            },
-            'cci': cci
+                'k': stoch_k,
+                'd': stoch_d
+            }
         }
         
     def _calculate_volatility_indicators(self, data: pd.DataFrame) -> Dict:
         """변동성 지표 계산"""
         # 볼린저 밴드
-        upper, middle, lower = abstract.BBANDS(data)
+        bb = BollingerBands(close=data['close'])
         
         # ATR
-        atr = abstract.ATR(data)
+        atr = AverageTrueRange(
+            high=data['high'],
+            low=data['low'],
+            close=data['close']
+        ).average_true_range()
         
         return {
-            'bollinger_bands': {
-                'upper': upper,
-                'middle': middle,
-                'lower': lower
+            'bollinger': {
+                'upper': bb.bollinger_hband(),
+                'middle': bb.bollinger_mavg(),
+                'lower': bb.bollinger_lband()
             },
             'atr': atr
         }
         
     def _calculate_volume_indicators(self, data: pd.DataFrame) -> Dict:
         """거래량 지표 계산"""
-        # OBV
-        obv = abstract.OBV(data)
+        # VWAP
+        vwap = VolumeWeightedAveragePrice(
+            high=data['high'],
+            low=data['low'],
+            close=data['close'],
+            volume=data['volume']
+        ).volume_weighted_average_price()
         
-        # MFI
-        mfi = abstract.MFI(data)
+        # 거래량 이동평균
+        volume_ma = SMAIndicator(close=data['volume'], window=20).sma_indicator()
         
         return {
-            'obv': obv,
-            'mfi': mfi
+            'vwap': vwap,
+            'volume_ma': volume_ma
         }
         
     def _calculate_oscillators(self, data: pd.DataFrame) -> Dict:

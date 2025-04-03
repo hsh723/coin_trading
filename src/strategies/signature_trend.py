@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any
 from datetime import datetime
-import talib
+from ta.trend import EMAIndicator, MACD
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
 
 class SignatureTrendStrategy:
     def __init__(self, leverage: float = 40.0):
@@ -19,28 +21,28 @@ class SignatureTrendStrategy:
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """기술적 지표를 계산합니다."""
         # EMA 계산
-        df['ema_short'] = talib.EMA(df['close'], timeperiod=self.ema_short)
-        df['ema_long'] = talib.EMA(df['close'], timeperiod=self.ema_long)
+        df['ema_short'] = EMAIndicator(close=df['close'], window=self.ema_short).ema_indicator()
+        df['ema_long'] = EMAIndicator(close=df['close'], window=self.ema_long).ema_indicator()
         
         # RSI 계산
-        df['rsi'] = talib.RSI(df['close'], timeperiod=self.rsi_period)
+        df['rsi'] = RSIIndicator(close=df['close'], window=self.rsi_period).rsi()
         
         # MACD 계산
-        df['macd'], df['macd_signal'], df['macd_hist'] = talib.MACD(
-            df['close'],
-            fastperiod=self.macd_fast,
-            slowperiod=self.macd_slow,
-            signalperiod=self.macd_signal
+        macd = MACD(
+            close=df['close'],
+            window_slow=self.macd_slow,
+            window_fast=self.macd_fast,
+            window_sign=self.macd_signal
         )
+        df['macd'] = macd.macd()
+        df['macd_signal'] = macd.macd_signal()
+        df['macd_hist'] = macd.macd_diff()
         
         # 볼린저 밴드 계산
-        df['upper'], df['middle'], df['lower'] = talib.BBANDS(
-            df['close'],
-            timeperiod=20,
-            nbdevup=2,
-            nbdevdn=2,
-            matype=0
-        )
+        bollinger = BollingerBands(close=df['close'], window=20, window_dev=2)
+        df['upper'] = bollinger.bollinger_hband()
+        df['middle'] = bollinger.bollinger_mavg()
+        df['lower'] = bollinger.bollinger_lband()
         
         return df
     

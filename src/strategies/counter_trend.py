@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any
 from datetime import datetime
-import talib
+from ta.trend import EMAIndicator
+from ta.momentum import RSIIndicator
 
 class CounterTrendStrategy:
     def __init__(self, leverage: float = 40.0):
@@ -16,11 +17,11 @@ class CounterTrendStrategy:
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """기술적 지표를 계산합니다."""
         # EMA 계산
-        df['ema_short'] = talib.EMA(df['close'], timeperiod=self.ema_short)
-        df['ema_long'] = talib.EMA(df['close'], timeperiod=self.ema_long)
+        df['ema_short'] = EMAIndicator(close=df['close'], window=self.ema_short).ema_indicator()
+        df['ema_long'] = EMAIndicator(close=df['close'], window=self.ema_long).ema_indicator()
         
         # RSI 계산
-        df['rsi'] = talib.RSI(df['close'], timeperiod=self.rsi_period)
+        df['rsi'] = RSIIndicator(close=df['close'], window=self.rsi_period).rsi()
         
         return df
     

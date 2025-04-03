@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any
 from datetime import datetime
-import talib
+from ta.trend import SMAIndicator, MACD
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
 
 class FlightStrategy:
     def __init__(self, leverage: float = 50.0):
@@ -14,27 +16,27 @@ class FlightStrategy:
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """기술적 지표를 계산합니다."""
         # 거래량 이동평균
-        df['volume_ma'] = talib.SMA(df['volume'], timeperiod=20)
+        df['volume_ma'] = SMAIndicator(close=df['volume'], window=20).sma_indicator()
         
         # RSI
-        df['rsi'] = talib.RSI(df['close'], timeperiod=14)
+        df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi()
         
         # 볼린저 밴드
-        df['upper'], df['middle'], df['lower'] = talib.BBANDS(
-            df['close'],
-            timeperiod=20,
-            nbdevup=2,
-            nbdevdn=2,
-            matype=0
-        )
+        bollinger = BollingerBands(close=df['close'], window=20, window_dev=2)
+        df['upper'] = bollinger.bollinger_hband()
+        df['middle'] = bollinger.bollinger_mavg()
+        df['lower'] = bollinger.bollinger_lband()
         
         # MACD
-        df['macd'], df['macd_signal'], df['macd_hist'] = talib.MACD(
-            df['close'],
-            fastperiod=12,
-            slowperiod=26,
-            signalperiod=9
+        macd = MACD(
+            close=df['close'],
+            window_slow=26,
+            window_fast=12,
+            window_sign=9
         )
+        df['macd'] = macd.macd()
+        df['macd_signal'] = macd.macd_signal()
+        df['macd_hist'] = macd.macd_diff()
         
         return df
     

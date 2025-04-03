@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any
 from datetime import datetime
-import talib
+from ta.trend import EMAIndicator
+from ta.momentum import StochasticOscillator
 
 class FiveMinuteScalping:
     def __init__(self, leverage: float = 40.0):
@@ -15,20 +16,19 @@ class FiveMinuteScalping:
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """기술적 지표를 계산합니다."""
         # EMA 계산
-        df['ema_short'] = talib.EMA(df['close'], timeperiod=self.ema_short)
-        df['ema_long'] = talib.EMA(df['close'], timeperiod=self.ema_long)
+        df['ema_short'] = EMAIndicator(close=df['close'], window=self.ema_short).ema_indicator()
+        df['ema_long'] = EMAIndicator(close=df['close'], window=self.ema_long).ema_indicator()
         
         # 스토캐스틱 계산
-        df['slowk'], df['slowd'] = talib.STOCH(
-            df['high'], 
-            df['low'], 
-            df['close'],
-            fastk_period=self.stoch_k,
-            slowk_period=3,
-            slowk_matype=0,
-            slowd_period=3,
-            slowd_matype=0
+        stoch = StochasticOscillator(
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            window=self.stoch_k,
+            smooth_window=3
         )
+        df['slowk'] = stoch.stoch()
+        df['slowd'] = stoch.stoch_signal()
         
         return df
     
