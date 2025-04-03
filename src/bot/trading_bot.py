@@ -423,7 +423,16 @@ class TradingBot:
     def get_trades(self) -> List[Dict[str, Any]]:
         """거래 내역 조회"""
         try:
-            return self.database.get_trades(self.config['symbol'])
+            trades = self.database.get_trades(self.config['symbol'])
+            return [{
+                'timestamp': trade['timestamp'],
+                'symbol': trade['symbol'],
+                'side': trade['side'],
+                'price': trade['price'],
+                'size': trade['size'],
+                'pnl': trade.get('pnl', 0.0)
+            } for trade in trades]
+            
         except Exception as e:
             self.logger.error(f"거래 내역 조회 실패: {str(e)}")
             return [] 

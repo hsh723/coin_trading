@@ -272,33 +272,30 @@ def render_position_info(positions: list):
 async def update_market_data():
     """시장 데이터 업데이트"""
     try:
-        if st.session_state.bot and st.session_state.bot.is_running:
-            market_data = await st.session_state.bot.get_market_data()
-            if market_data is not None:
-                st.session_state.market_data = market_data
-                st.session_state.last_update = datetime.now()
+        if st.session_state.bot:
+            market_data = st.session_state.bot.get_market_data()
+            st.session_state.market_data = market_data
+            st.session_state.last_update = datetime.now()
     except Exception as e:
-        logger.error(f"시장 데이터 업데이트 실패: {str(e)}")
+        st.error(f"시장 데이터 업데이트 실패: {str(e)}")
 
 async def update_positions():
     """포지션 정보 업데이트"""
     try:
-        if st.session_state.bot and st.session_state.bot.is_running:
-            positions = await st.session_state.bot.get_positions()
-            if positions is not None:
-                st.session_state.positions = positions
+        if st.session_state.bot:
+            positions = st.session_state.bot.get_positions()
+            st.session_state.positions = positions
     except Exception as e:
-        logger.error(f"포지션 정보 업데이트 실패: {str(e)}")
+        st.error(f"포지션 정보 업데이트 실패: {str(e)}")
 
 async def update_trades():
     """거래 내역 업데이트"""
     try:
-        if st.session_state.bot and st.session_state.bot.is_running:
-            trades = await st.session_state.bot.get_trades()
-            if trades is not None:
-                st.session_state.trades = trades
+        if st.session_state.bot:
+            trades = st.session_state.bot.get_trades()
+            st.session_state.trades = trades
     except Exception as e:
-        logger.error(f"거래 내역 업데이트 실패: {str(e)}")
+        st.error(f"거래 내역 업데이트 실패: {str(e)}")
 
 async def update_performance_report():
     """성과 리포트 업데이트"""
