@@ -1,7 +1,10 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import pandas as pd
 from dataclasses import dataclass
 from enum import Enum
+import numpy as np
+import talib
+from scipy import stats
 
 from .base import BaseStrategy, TrendType, TrendInfo, FibonacciLevels, StochasticSignal, TrendlineInfo
 
@@ -33,167 +36,435 @@ class IntegratedStrategy(BaseStrategy):
         self.min_signal_strength = config.get('min_signal_strength', 0.6)
         self.stop_loss_pct = config.get('stop_loss_pct', 0.02)
         self.take_profit_pct = config.get('take_profit_pct', 0.04)
+        
+        # 이동평균선 설정
+        self.ma_short = 20  # 20일 이동평균
+        self.ma_long = 60   # 60일 이동평균
+        self.ma_200 = 200   # 200일 이동평균
+        
+        # 볼린저 밴드 설정
+        self.bb_period = 20
+        self.bb_std = 2
+        
+        # RSI 설정
+        self.rsi_period = 14
+        
+        # 스토캐스틱 설정
+        self.stoch_period = 14
+        
+        # 리스크 관리
+        self.risk_per_trade = 0.1  # 전체 자본의 10% 리스크
+        self.take_profit_ratio = 0.15  # 15% 익절
+        self.stop_loss_ratio = 0.15  # 15% 손절
+        
+        # 추세선 설정
+        self.touch_threshold = 0.002  # 0.2% 이내면 터치로 판단
+        self.min_touch_points = 3  # 최소 터치 포인트 수
+        self.trendline_lookback = 50  # 추세선을 찾을 기간
 
-    def generate_signals(self, data: pd.DataFrame) -> Dict:
-        """통합 신호 생성"""
-        # 각 지표별 신호 분석
-        trend_info = self.identify_trend(data)
-        fib_levels = self.calculate_fibonacci_levels(data)
-        stoch_signal = self.check_stochastic(data)
-        trendline_info = self.detect_trendlines(data)
+    def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """모든 기술적 지표를 계산합니다."""
+        # 이동평균선
+        df['ma_short'] = talib.SMA(df['close'], timeperiod=self.ma_short)
+        df['ma_long'] = talib.SMA(df['close'], timeperiod=self.ma_long)
+        df['ma_200'] = talib.SMA(df['close'], timeperiod=self.ma_200)
         
-        # 각 지표별 신호 점수 계산
-        trend_score = self._calculate_trend_score(trend_info)
-        fib_score = self._calculate_fibonacci_score(fib_levels)
-        stoch_score = self._calculate_stochastic_score(stoch_signal)
-        trendline_score = self._calculate_trendline_score(trendline_info)
-        
-        # 종합 점수 계산
-        total_score = (
-            trend_score * self.signal_weights['trend'] +
-            fib_score * self.signal_weights['fibonacci'] +
-            stoch_score * self.signal_weights['stochastic'] +
-            trendline_score * self.signal_weights['trendline']
+        # 볼린저 밴드
+        df['bb_upper'], df['bb_middle'], df['bb_lower'] = talib.BBANDS(
+            df['close'],
+            timeperiod=self.bb_period,
+            nbdevup=self.bb_std,
+            nbdevdn=self.bb_std,
+            matype=0
         )
         
-        # 신호 생성
-        signal = self._generate_signal(total_score, data)
+        # RSI
+        df['rsi'] = talib.RSI(df['close'], timeperiod=self.rsi_period)
+        
+        # 스토캐스틱
+        df['slowk'], df['slowd'] = talib.STOCH(
+            df['high'],
+            df['low'],
+            df['close'],
+            fastk_period=self.stoch_period,
+            slowk_period=3,
+            slowk_matype=0,
+            slowd_period=3,
+            slowd_matype=0
+        )
+        
+        # 밴드 폭
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+        df['bb_width_change'] = df['bb_width'].pct_change()
+        
+        # 캔들 색상
+        df['is_bullish'] = df['close'] > df['open']
+        
+        return df
+        
+    def check_trend(self, df: pd.DataFrame) -> Dict[str, bool]:
+        """추세를 판단합니다."""
+        current_price = df['close'].iloc[-1]
+        
+        # 단기 추세 (20일선 vs 60일선)
+        short_trend_up = df['ma_short'].iloc[-1] > df['ma_long'].iloc[-1]
+        
+        # 장기 추세 (현재가 vs 200일선)
+        long_trend_up = current_price > df['ma_200'].iloc[-1]
         
         return {
-            'signal': signal,
-            'scores': {
-                'trend': trend_score,
-                'fibonacci': fib_score,
-                'stochastic': stoch_score,
-                'trendline': trendline_score,
-                'total': total_score
+            'short_trend_up': short_trend_up,
+            'long_trend_up': long_trend_up
+        }
+        
+    def check_band_conditions(self, df: pd.DataFrame) -> Dict[str, bool]:
+        """볼린저 밴드 조건을 확인합니다."""
+        current_price = df['close'].iloc[-1]
+        
+        # 밴드 터치
+        upper_touch = current_price >= df['bb_upper'].iloc[-1]
+        lower_touch = current_price <= df['bb_lower'].iloc[-1]
+        
+        # 밴드 스퀴즈
+        squeeze = df['bb_width'].iloc[-1] < df['bb_width'].rolling(20).mean().iloc[-1] * 0.8
+        
+        # 밴드 확장
+        expansion = df['bb_width_change'].iloc[-1] > 0.1
+        
+        return {
+            'upper_touch': upper_touch,
+            'lower_touch': lower_touch,
+            'squeeze': squeeze,
+            'expansion': expansion
+        }
+        
+    def check_rsi_condition(self, df: pd.DataFrame) -> Dict[str, bool]:
+        """RSI 조건을 확인합니다."""
+        current_rsi = df['rsi'].iloc[-1]
+        
+        overbought = current_rsi >= 70
+        oversold = current_rsi <= 30
+        
+        return {
+            'overbought': overbought,
+            'oversold': oversold
+        }
+        
+    def check_stoch_condition(self, df: pd.DataFrame) -> Dict[str, bool]:
+        """스토캐스틱 조건을 확인합니다."""
+        current_k = df['slowk'].iloc[-1]
+        
+        overbought = current_k >= 80
+        oversold = current_k <= 20
+        
+        return {
+            'overbought': overbought,
+            'oversold': oversold
+        }
+        
+    def check_candle_change(self, df: pd.DataFrame) -> Dict[str, bool]:
+        """캔들 색상 변화를 확인합니다."""
+        current_candle = df['is_bullish'].iloc[-1]
+        previous_candle = df['is_bullish'].iloc[-2]
+        
+        bear_to_bull = not previous_candle and current_candle
+        bull_to_bear = previous_candle and not current_candle
+        
+        return {
+            'bear_to_bull': bear_to_bull,
+            'bull_to_bear': bull_to_bear
+        }
+        
+    def find_abc_points(self, df: pd.DataFrame) -> Dict[str, float]:
+        """ABC 포인트를 찾습니다."""
+        recent_df = df.tail(100)
+        
+        a_point = recent_df['high'].max()
+        a_index = recent_df['high'].idxmax()
+        
+        after_a = recent_df.loc[a_index:]
+        b_point = after_a['low'].min()
+        b_index = after_a['low'].idxmin()
+        
+        after_b = recent_df.loc[b_index:]
+        c_point = after_b['high'].max()
+        c_index = after_b['high'].idxmax()
+        
+        after_c = recent_df.loc[c_index:]
+        d_point = after_c['low'].min()
+        
+        return {
+            'a': a_point,
+            'b': b_point,
+            'c': c_point,
+            'd': d_point
+        }
+        
+    def check_abc_pattern(self, df: pd.DataFrame, points: Dict[str, float]) -> bool:
+        """ABC 패턴이 유효한지 확인합니다."""
+        if points['c'] > points['a']:
+            return False
+            
+        if points['d'] < points['b']:
+            return False
+            
+        return True
+        
+    def find_trendlines(self, df: pd.DataFrame) -> Dict[str, Dict]:
+        """상승/하락 추세선을 찾고 신뢰도를 검증합니다."""
+        recent_df = df.tail(self.trendline_lookback)
+        highs = recent_df['high'].values
+        lows = recent_df['low'].values
+        indices = np.arange(len(recent_df))
+        
+        # 상승 추세선 찾기 (저점 연결)
+        support_points = []
+        for i in range(2, len(lows)):
+            if lows[i] > lows[i-1] and lows[i-1] > lows[i-2]:
+                support_points.append((indices[i], lows[i]))
+                
+        # 하락 추세선 찾기 (고점 연결)
+        resistance_points = []
+        for i in range(2, len(highs)):
+            if highs[i] < highs[i-1] and highs[i-1] < highs[i-2]:
+                resistance_points.append((indices[i], highs[i]))
+                
+        # 추세선 신뢰도 계산
+        support_line = self.calculate_trendline_with_confidence(support_points)
+        resistance_line = self.calculate_trendline_with_confidence(resistance_points)
+        
+        return {
+            'support': {
+                'points': support_points,
+                'line': support_line,
+                'is_valid': len(support_points) >= self.min_touch_points and 
+                           support_line['r_squared'] > 0.7 if support_line else False
             },
-            'indicators': {
-                'trend': trend_info,
-                'fibonacci': fib_levels,
-                'stochastic': stoch_signal,
-                'trendline': trendline_info
+            'resistance': {
+                'points': resistance_points,
+                'line': resistance_line,
+                'is_valid': len(resistance_points) >= self.min_touch_points and 
+                           resistance_line['r_squared'] > 0.7 if resistance_line else False
             }
         }
-
-    def _calculate_trend_score(self, trend_info: TrendInfo) -> float:
-        """트렌드 점수 계산"""
-        score = 0.0
         
-        # 트렌드 타입에 따른 점수
-        if trend_info.trend_type == TrendType.UPTREND:
-            score += 0.4
-        elif trend_info.trend_type == TrendType.DOWNTREND:
-            score -= 0.4
+    def calculate_trendline_with_confidence(self, points: List[Tuple[float, float]]) -> Dict:
+        """추세선의 기울기, 절편, 신뢰도를 계산합니다."""
+        if len(points) < 2:
+            return None
             
-        # MA 크로스오버 점수
-        if trend_info.ma_crossover:
-            score += 0.3
-            
-        # 트렌드 강도 점수
-        score += trend_info.strength * 0.3
+        x = np.array([p[0] for p in points])
+        y = np.array([p[1] for p in points])
         
-        return max(min(score, 1.0), -1.0)
-
-    def _calculate_fibonacci_score(self, fib_levels: FibonacciLevels) -> float:
-        """피보나치 점수 계산"""
-        score = 0.0
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
         
-        # 현재 가격이 피보나치 레벨에 가까울수록 점수 증가
-        distance = fib_levels.distance_to_level
-        if distance < 0.1:
-            score += 0.5
-            
-        # 레벨에 따른 점수 조정
-        level = float(fib_levels.nearest_level)
-        if level in [0.382, 0.618]:
-            score += 0.3
-        elif level in [0.5]:
-            score += 0.2
-            
-        return max(min(score, 1.0), -1.0)
-
-    def _calculate_stochastic_score(self, stoch_signal: StochasticSignal) -> float:
-        """스토캐스틱 점수 계산"""
-        score = 0.0
+        # R-squared 값 계산
+        y_pred = slope * x + intercept
+        ss_res = np.sum((y - y_pred) ** 2)
+        ss_tot = np.sum((y - np.mean(y)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot)
         
-        # 과매수/과매도 점수
-        if stoch_signal.is_overbought:
-            score -= 0.4
-        elif stoch_signal.is_oversold:
-            score += 0.4
-            
-        # 크로스오버 점수
-        if stoch_signal.crossover_up:
-            score += 0.3
-        elif stoch_signal.crossover_down:
-            score -= 0.3
-            
-        return max(min(score, 1.0), -1.0)
-
-    def _calculate_trendline_score(self, trendline_info: TrendlineInfo) -> float:
-        """추세선 점수 계산"""
-        score = 0.0
-        
-        # R-squared 값에 따른 점수
-        score += trendline_info.r_squared * 0.4
-        
-        # 기울기에 따른 점수
-        if trendline_info.slope > 0:
-            score += 0.3
-        else:
-            score -= 0.3
-            
-        return max(min(score, 1.0), -1.0)
-
-    def _generate_signal(self, total_score: float, data: pd.DataFrame) -> Signal:
-        """최종 신호 생성"""
-        current_price = data['close'].iloc[-1]
-        
-        # 신호 타입 결정
-        if total_score > 0.7:
-            signal_type = SignalType.STRONG_BUY
-        elif total_score > 0.3:
-            signal_type = SignalType.BUY
-        elif total_score < -0.7:
-            signal_type = SignalType.STRONG_SELL
-        elif total_score < -0.3:
-            signal_type = SignalType.SELL
-        else:
-            signal_type = SignalType.NEUTRAL
-            
-        # 신호 강도 계산
-        strength = abs(total_score)
-        
-        # 손절/익절 가격 계산
-        if signal_type in [SignalType.BUY, SignalType.STRONG_BUY]:
-            stop_loss = current_price * (1 - self.stop_loss_pct)
-            take_profit = current_price * (1 + self.take_profit_pct)
-        elif signal_type in [SignalType.SELL, SignalType.STRONG_SELL]:
-            stop_loss = current_price * (1 + self.stop_loss_pct)
-            take_profit = current_price * (1 - self.take_profit_pct)
-        else:
-            stop_loss = take_profit = current_price
-            
-        # 신호 사유 생성
-        reason = self._generate_signal_reason(signal_type, total_score)
-        
-        return Signal(
-            type=signal_type,
-            strength=strength,
-            price=current_price,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            reason=reason
-        )
-
-    def _generate_signal_reason(self, signal_type: SignalType, total_score: float) -> str:
-        """신호 사유 생성"""
-        reasons = {
-            SignalType.STRONG_BUY: "강한 매수 신호: 모든 지표가 상승 추세를 지지",
-            SignalType.BUY: "매수 신호: 대부분의 지표가 상승 추세를 지지",
-            SignalType.NEUTRAL: "중립 신호: 지표들이 혼조세를 보임",
-            SignalType.SELL: "매도 신호: 대부분의 지표가 하락 추세를 지지",
-            SignalType.STRONG_SELL: "강한 매도 신호: 모든 지표가 하락 추세를 지지"
+        return {
+            'slope': slope,
+            'intercept': intercept,
+            'r_squared': r_squared,
+            'std_err': std_err
         }
-        return reasons.get(signal_type, "알 수 없는 신호") 
+        
+    def check_touch(self, df: pd.DataFrame, trendlines: Dict[str, Dict]) -> Dict[str, bool]:
+        """현재 가격이 추세선에 터치했는지 확인합니다."""
+        current_price = df['close'].iloc[-1]
+        current_index = len(df) - 1
+        
+        touches = {
+            'support': False,
+            'resistance': False
+        }
+        
+        # 지지선 터치 확인
+        if trendlines['support']['is_valid']:
+            slope, intercept = trendlines['support']['line']['slope'], trendlines['support']['line']['intercept']
+            if slope and intercept:
+                trendline_price = slope * current_index + intercept
+                if abs(current_price - trendline_price) / trendline_price <= self.touch_threshold:
+                    touches['support'] = True
+                    
+        # 저항선 터치 확인
+        if trendlines['resistance']['is_valid']:
+            slope, intercept = trendlines['resistance']['line']['slope'], trendlines['resistance']['line']['intercept']
+            if slope and intercept:
+                trendline_price = slope * current_index + intercept
+                if abs(current_price - trendline_price) / trendline_price <= self.touch_threshold:
+                    touches['resistance'] = True
+                    
+        return touches
+        
+    def check_band_touch(self, df: pd.DataFrame) -> Dict[str, bool]:
+        """볼린저 밴드 터치를 확인합니다."""
+        current_price = df['close'].iloc[-1]
+        upper_band = df['bb_upper'].iloc[-1]
+        lower_band = df['bb_lower'].iloc[-1]
+        
+        # 밴드 터치 판단 (0.2% 이내)
+        upper_touch = abs(current_price - upper_band) / upper_band <= self.touch_threshold
+        lower_touch = abs(current_price - lower_band) / lower_band <= self.touch_threshold
+        
+        # 밴드 돌파 확인 (0.2% 이상)
+        upper_break = (current_price - upper_band) / upper_band > self.touch_threshold
+        lower_break = (lower_band - current_price) / lower_band > self.touch_threshold
+        
+        return {
+            'upper_touch': upper_touch,
+            'lower_touch': lower_touch,
+            'upper_break': upper_break,
+            'lower_break': lower_break
+        }
+        
+    def check_price_action(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """가격 행동을 상세히 분석합니다."""
+        current_price = df['close'].iloc[-1]
+        prev_price = df['close'].iloc[-2]
+        
+        # 캔들 패턴 분석
+        is_bullish = current_price > df['open'].iloc[-1]
+        is_strong_bullish = current_price > df['high'].iloc[-2]
+        is_strong_bearish = current_price < df['low'].iloc[-2]
+        
+        # 캔들 크기 분석
+        candle_size = abs(current_price - df['open'].iloc[-1])
+        avg_candle_size = abs(df['close'] - df['open']).rolling(20).mean().iloc[-1]
+        is_large_candle = candle_size > avg_candle_size * 1.5
+        
+        # 거래량 분석
+        current_volume = df['volume'].iloc[-1]
+        avg_volume = df['volume'].rolling(20).mean().iloc[-1]
+        is_high_volume = current_volume > avg_volume * 1.5
+        
+        # 가격 모멘텀 분석
+        price_change = (current_price - prev_price) / prev_price
+        is_strong_move = abs(price_change) > self.touch_threshold * 2
+        
+        # RSI 모멘텀
+        rsi = df['rsi'].iloc[-1]
+        prev_rsi = df['rsi'].iloc[-2]
+        rsi_momentum = rsi - prev_rsi
+        
+        return {
+            'is_bullish': is_bullish,
+            'is_strong_bullish': is_strong_bullish,
+            'is_strong_bearish': is_strong_bearish,
+            'is_large_candle': is_large_candle,
+            'is_high_volume': is_high_volume,
+            'is_strong_move': is_strong_move,
+            'rsi_momentum': rsi_momentum,
+            'price_change': price_change
+        }
+        
+    def check_signal_strength(self, df: pd.DataFrame, conditions: Dict) -> float:
+        """신호의 강도를 계산합니다."""
+        strength = 0.0
+        
+        # 추세선 신뢰도
+        if conditions['trendline_touches']['support'] or conditions['trendline_touches']['resistance']:
+            strength += 0.3
+            
+        # 볼린저 밴드 조건
+        if conditions['band_touches']['upper_touch'] or conditions['band_touches']['lower_touch']:
+            strength += 0.2
+            
+        # RSI 조건
+        if conditions['rsi_condition']['oversold'] or conditions['rsi_condition']['overbought']:
+            strength += 0.2
+            
+        # 가격 행동
+        if conditions['price_action']['is_large_candle']:
+            strength += 0.1
+        if conditions['price_action']['is_high_volume']:
+            strength += 0.1
+        if conditions['price_action']['is_strong_move']:
+            strength += 0.1
+            
+        return min(strength, 1.0)
+        
+    def generate_signal(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """매매 신호를 생성합니다."""
+        df = self.calculate_indicators(df)
+        trend = self.check_trend(df)
+        band_conditions = self.check_band_conditions(df)
+        rsi_condition = self.check_rsi_condition(df)
+        stoch_condition = self.check_stoch_condition(df)
+        candle_change = self.check_candle_change(df)
+        points = self.find_abc_points(df)
+        
+        # 추가된 분석
+        trendlines = self.find_trendlines(df)
+        trendline_touches = self.check_touch(df, trendlines)
+        band_touches = self.check_band_touch(df)
+        price_action = self.check_price_action(df)
+        
+        # 신호 강도 계산
+        conditions = {
+            'trendline_touches': trendline_touches,
+            'band_touches': band_touches,
+            'rsi_condition': rsi_condition,
+            'price_action': price_action
+        }
+        signal_strength = self.check_signal_strength(df, conditions)
+        
+        signal = {
+            'position': None,
+            'reason': None,
+            'entry_price': None,
+            'stop_loss': None,
+            'take_profit': None,
+            'strength': signal_strength
+        }
+        
+        current_price = df['close'].iloc[-1]
+        
+        # 상승추세 진입 조건
+        if trend['long_trend_up']:
+            # 저항선 터치 + RSI 과매도 + 강한 모멘텀
+            if (trendline_touches['resistance'] and 
+                rsi_condition['oversold'] and 
+                price_action['is_bullish'] and
+                price_action['rsi_momentum'] > 0 and
+                price_action['is_high_volume']):
+                signal['position'] = 'long'
+                signal['reason'] = "상승추세 + 저항선 터치 + RSI 과매도 + 강한 모멘텀"
+                
+            # 볼린저 밴드 하단 터치 + 강한 반등 + 거래량 증가
+            elif (band_touches['lower_touch'] and 
+                  price_action['is_strong_bullish'] and
+                  price_action['is_high_volume']):
+                signal['position'] = 'long'
+                signal['reason'] = "상승추세 + 볼린저 밴드 하단 터치 + 강한 반등 + 거래량 증가"
+                
+        # 하락추세 진입 조건
+        elif not trend['long_trend_up']:
+            # 지지선 터치 + RSI 과매수 + 강한 하락 모멘텀
+            if (trendline_touches['support'] and 
+                rsi_condition['overbought'] and 
+                price_action['is_strong_bearish'] and
+                price_action['rsi_momentum'] < 0 and
+                price_action['is_high_volume']):
+                signal['position'] = 'short'
+                signal['reason'] = "하락추세 + 지지선 터치 + RSI 과매수 + 강한 하락 모멘텀"
+                
+            # 볼린저 밴드 상단 터치 + 강한 하락 + 거래량 증가
+            elif (band_touches['upper_touch'] and 
+                  price_action['is_strong_bearish'] and
+                  price_action['is_high_volume']):
+                signal['position'] = 'short'
+                signal['reason'] = "하락추세 + 볼린저 밴드 상단 터치 + 강한 하락 + 거래량 증가"
+                
+        if signal['position'] is not None:
+            signal['entry_price'] = current_price
+            if signal['position'] == 'long':
+                signal['stop_loss'] = current_price * (1 - self.stop_loss_ratio)
+                signal['take_profit'] = current_price * (1 + self.take_profit_ratio)
+            else:
+                signal['stop_loss'] = current_price * (1 + self.stop_loss_ratio)
+                signal['take_profit'] = current_price * (1 - self.take_profit_ratio)
+                
+        return signal 

@@ -113,4 +113,115 @@ src/
 ## 테스트 및 문서화
 - `tests/`: 단위 테스트 및 통합 테스트
 - `docs/`: API 문서 및 사용자 가이드
-- `notebooks/`: 분석 및 전략 개발 노트북 
+- `notebooks/`: 분석 및 전략 개발 노트북
+
+# 프로젝트 구조 상세 설명
+
+## 1. 전략 모듈 (src/strategies/)
+
+### 1.1 BaseStrategy (base.py)
+- 모든 전략의 기본 클래스
+- 공통 메서드와 인터페이스 정의
+- 기본 설정값 관리
+
+### 1.2 IntegratedStrategy (integrated_strategy.py)
+- 통합된 트레이딩 전략 구현
+- 주요 기능:
+  - 이동평균선 분석 (20일, 60일, 200일)
+  - 볼린저 밴드 분석
+  - RSI 분석
+  - 스토캐스틱 분석
+  - ABC 패턴 분석
+  - 추세선 분석
+  - 캔들 패턴 분석
+  - 신호 강도 계산
+
+## 2. 트레이더 모듈 (src/traders/)
+
+### 2.1 IntegratedTrader (integrated_trader.py)
+- 실제 거래 실행을 담당
+- 주요 기능:
+  - 거래 실행
+  - 포지션 관리
+  - 리스크 관리
+  - 로깅
+  - 추가 진입 관리
+
+## 3. 유틸리티 모듈 (src/utils/)
+
+### 3.1 DataLoader (data_loader.py)
+- 데이터 수집 및 전처리
+- 주요 기능:
+  - 실시간 데이터 수집
+  - 과거 데이터 로드
+  - 데이터 전처리
+
+### 3.2 RiskManager (risk_manager.py)
+- 리스크 관리 담당
+- 주요 기능:
+  - 포지션 사이징
+  - 손절/익절 관리
+  - 자본 관리
+  - 리스크 제한
+
+## 4. 실행 스크립트
+
+### 4.1 run_integrated_trader.py
+- 실제 트레이딩 실행
+- 주요 기능:
+  - 환경 설정
+  - 트레이더 초기화
+  - 거래 루프 실행
+
+### 4.2 backtest_integrated_strategy.py
+- 백테스팅 실행
+- 주요 기능:
+  - 과거 데이터 로드
+  - 전략 테스트
+  - 성과 분석
+
+## 5. 테스트 모듈 (tests/)
+
+### 5.1 test_strategy.py
+- 전략 테스트
+- 주요 테스트:
+  - 지표 계산
+  - 신호 생성
+  - 패턴 인식
+
+### 5.2 test_trader.py
+- 트레이더 테스트
+- 주요 테스트:
+  - 거래 실행
+  - 포지션 관리
+  - 리스크 관리
+
+## 6. 로그 파일 (logs/)
+
+### 6.1 integrated_trader.log
+- 거래 기록 저장
+- 주요 내용:
+  - 진입/청산 시점
+  - 진입/청산 사유
+  - 포지션 크기
+  - 수익/손실
+  - 신호 강도
+
+## 7. 설정 파일
+
+### 7.1 .env
+- 환경 변수 설정
+- 주요 설정:
+  - API 키
+  - API 시크릿
+  - 기타 설정값
+
+### 7.2 requirements.txt
+- 필요한 패키지 목록
+- 주요 패키지:
+  - pandas
+  - numpy
+  - ccxt
+  - python-dotenv
+  - ta-lib
+  - scipy 

@@ -13,6 +13,11 @@ import threading
 import time
 from pathlib import Path
 from dotenv import load_dotenv
+import asyncio
+from src.bot.trading_bot import TradingBot
+from src.utils.logger import setup_logger
+from src.analysis.performance_analyzer import PerformanceAnalyzer
+from src.database.database import Database
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -192,34 +197,40 @@ trading_thread = None
 stop_trading = False
 telegram = TelegramNotifier()  # 인자 없이 초기화
 
+# 로거 설정
+logger = setup_logger('streamlit_app')
+
+# 세션 상태 초기화
+if 'bot' not in st.session_state:
+    st.session_state.bot = None
+if 'market_data' not in st.session_state:
+    st.session_state.market_data = None
+if 'positions' not in st.session_state:
+    st.session_state.positions = []
+if 'trades' not in st.session_state:
+    st.session_state.trades = []
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = None
+if 'performance_report' not in st.session_state:
+    st.session_state.performance_report = None
+
+# 데이터베이스 초기화
+db = Database()
+
 def init_session_state():
     """세션 상태 초기화"""
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-    if "username" not in st.session_state:
-        st.session_state.username = None
-    if "current_page" not in st.session_state:
-        st.session_state.current_page = "대시보드"
-    if "logs" not in st.session_state:
-        st.session_state.logs = []
-    if "market_data" not in st.session_state:
+    if 'bot' not in st.session_state:
+        st.session_state.bot = None
+    if 'market_data' not in st.session_state:
         st.session_state.market_data = None
-    if "trades" not in st.session_state:
-        st.session_state.trades = []
-    if "trading_status" not in st.session_state:
-        st.session_state.trading_status = False
-    if "last_auth_time" not in st.session_state:
-        st.session_state.last_auth_time = None
-    if "positions" not in st.session_state:
+    if 'positions' not in st.session_state:
         st.session_state.positions = []
-    if "performance" not in st.session_state:
-        st.session_state.performance = {
-            "daily_return": 0,
-            "weekly_return": 0,
-            "monthly_return": 0,
-            "total_trades": 0,
-            "total_pnl": 0
-        }
+    if 'trades' not in st.session_state:
+        st.session_state.trades = []
+    if 'last_update' not in st.session_state:
+        st.session_state.last_update = None
+    if 'performance_report' not in st.session_state:
+        st.session_state.performance_report = None
 
 def add_log(message: str, level: str = "INFO"):
     """로그 추가"""
@@ -261,476 +272,259 @@ def save_trading_config(config):
 
 def get_sample_market_data():
     """샘플 시장 데이터 생성"""
-    now = datetime.now()
-    dates = pd.date_range(end=now, periods=100, freq='1H')
-    base_price = 50000  # BTC/USDT 기준 가격
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30)
+    date_range = pd.date_range(start=start_date, end=end_date, freq='1H')
     
-    data = {
-        'timestamp': dates,
-        'open': [base_price * (1 + 0.001 * i) for i in range(100)],
-        'high': [base_price * (1 + 0.002 * i) for i in range(100)],
-        'low': [base_price * (1 - 0.001 * i) for i in range(100)],
-        'close': [base_price * (1 + 0.0005 * i) for i in range(100)],
-        'volume': [1000 * (1 + 0.01 * i) for i in range(100)]
-    }
-    
-    df = pd.DataFrame(data)
-    df.set_index('timestamp', inplace=True)
-    return df
+    return pd.DataFrame({
+        'timestamp': date_range,
+        'open': [100 + i for i in range(len(date_range))],
+        'high': [105 + i for i in range(len(date_range))],
+        'low': [95 + i for i in range(len(date_range))],
+        'close': [102 + i for i in range(len(date_range))],
+        'volume': [1000 + i * 100 for i in range(len(date_range))]
+    })
 
-def update_market_data(exchange):
-    """시장 데이터 업데이트"""
-    try:
-        with st.spinner("시장 데이터를 불러오는 중..."):
-            # API에서 데이터 가져오기 시도
-            ohlcv = exchange.fetch_ohlcv('BTC/USDT', '1h', 100)
-            
-            if ohlcv:
-                df = pd.DataFrame(
-                    ohlcv,
-                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-                )
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                df.set_index('timestamp', inplace=True)
-                st.session_state.market_data = df
-                add_log("시장 데이터 업데이트 완료")
-                return True
-            else:
-                # API 데이터가 없으면 샘플 데이터 사용
-                st.session_state.market_data = get_sample_market_data()
-                add_log("샘플 시장 데이터 사용", "WARNING")
-                return True
-                
-    except Exception as e:
-        error_msg = f"시장 데이터 업데이트 오류: {str(e)}"
-        add_log(error_msg, "ERROR")
-        
-        # 오류 발생 시 샘플 데이터 사용
-        st.session_state.market_data = get_sample_market_data()
-        add_log("샘플 시장 데이터 사용", "WARNING")
-        return True
-
-def update_positions(exchange):
-    """포지션 정보 업데이트"""
-    try:
-        positions = exchange.fetch_positions()
-        st.session_state.positions = positions
-        add_log("포지션 정보 업데이트 완료")
-    except Exception as e:
-        error_msg = f"포지션 업데이트 실패: {str(e)}"
-        add_log(error_msg, "ERROR")
-
-def update_trades(exchange):
-    """거래 내역 업데이트"""
-    try:
-        trades = exchange.fetch_my_trades('BTC/USDT', limit=10)
-        st.session_state.trades = trades
-        add_log("거래 내역 업데이트 완료")
-    except Exception as e:
-        error_msg = f"거래 내역 업데이트 실패: {str(e)}"
-        add_log(error_msg, "ERROR")
-
-def update_performance():
-    """성과 지표 업데이트"""
-    try:
-        # 세션 상태 초기화 확인
-        if "trades" not in st.session_state:
-            st.session_state.trades = []
-            
-        if st.session_state.trades:
-            now = datetime.now()
-            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            week_ago = today - timedelta(days=7)
-            month_ago = today - timedelta(days=30)
-            
-            # 임시 성과 계산
-            st.session_state.performance = {
-                "daily_return": 0.0,
-                "weekly_return": 0.0,
-                "monthly_return": 0.0,
-                "total_trades": len(st.session_state.trades),
-                "total_pnl": 0.0
-            }
-            
-            add_log("성과 지표 업데이트 완료")
-    except Exception as e:
-        error_msg = f"성과 지표 업데이트 실패: {str(e)}"
-        add_log(error_msg, "ERROR")
-
-def trading_loop(exchange, strategy, risk_manager):
-    """트레이딩 루프"""
-    global stop_trading
-    
-    while not stop_trading:
-        try:
-            # 데이터 업데이트
-            update_market_data(exchange)
-            update_positions(exchange)
-            update_trades(exchange)
-            update_performance()
-            
-            # 신호 생성
-            if st.session_state.market_data is not None:
-                signal = strategy.generate_signal(st.session_state.market_data)
-                
-                if signal:
-                    # 포지션 크기 계산
-                    position_size = strategy.calculate_position_size(
-                        risk_manager.get_capital(),
-                        risk_manager.risk_per_trade,
-                        signal['price'],
-                        signal['stop_loss']
-                    )
-                    
-                    # 주문 실행
-                    order = {
-                        'symbol': signal['symbol'],
-                        'type': signal['type'],
-                        'side': signal['side'],
-                        'amount': position_size,
-                        'price': signal['price']
-                    }
-                    
-                    exchange.create_order(**order)
-                    log_msg = f"주문 실행: {order}"
-                    add_log(log_msg)
-                    telegram.send_message(log_msg)
-            
-            time.sleep(60)  # 1분 대기
-            
-        except Exception as e:
-            error_msg = f"트레이딩 에러: {str(e)}"
-            add_log(error_msg, "ERROR")
-            time.sleep(60)
-
-def run_async(coroutine):
-    """비동기 함수를 동기적으로 실행"""
-    try:
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(coroutine)
-        loop.close()
-        return result
-    except Exception as e:
-        print(f"비동기 실행 오류: {e}")
-        return None
-
-def start_trading():
-    """트레이딩 시작"""
-    global trading_thread, stop_trading
-    
-    if trading_thread and trading_thread.is_alive():
-        st.error("트레이딩이 이미 실행 중입니다.")
-        return
-    
-    config = load_trading_config()
-    
-    exchange = BinanceExchange(
-        api_key=os.getenv("BINANCE_API_KEY"),
-        api_secret=os.getenv("BINANCE_API_SECRET"),
-        testnet=True
-    )
-    
-    strategy = IntegratedStrategy()
-    
-    risk_manager = RiskManager(
-        initial_capital=float(config.get('max_position_size', 100.0)),
-        risk_per_trade=float(config.get('stop_loss', 2.0)) / 100,
-        max_positions=3,
-        daily_loss_limit=0.05,
-        max_drawdown=0.10
-    )
-    
-    stop_trading = False
-    trading_thread = threading.Thread(
-        target=trading_loop,
-        args=(exchange, strategy, risk_manager)
-    )
-    trading_thread.start()
-    
-    st.session_state.trading_status = True
-    success_msg = "트레이딩이 시작되었습니다."
-    st.success(success_msg)
-    add_log(success_msg)
-    telegram.send_message(success_msg)
-
-def stop_trading_loop():
-    """트레이딩 중지"""
-    global trading_thread, stop_trading
-    
-    if trading_thread and trading_thread.is_alive():
-        stop_trading = True
-        trading_thread.join()
-        st.session_state.trading_status = False
-        success_msg = "트레이딩이 중지되었습니다."
-        st.success(success_msg)
-        add_log(success_msg)
-        telegram.send_message(success_msg)
-    else:
-        warning_msg = "실행 중인 트레이딩이 없습니다."
-        st.warning(warning_msg)
-        add_log(warning_msg, "WARNING")
-
-def render_chart():
+def render_chart(data: pd.DataFrame, symbol: str):
     """차트 렌더링"""
-    if st.session_state.market_data is not None:
-        try:
-            fig = go.Figure(data=[go.Candlestick(
-                x=st.session_state.market_data.index,
-                open=st.session_state.market_data['open'],
-                high=st.session_state.market_data['high'],
-                low=st.session_state.market_data['low'],
-                close=st.session_state.market_data['close']
-            )])
-            
-            fig.update_layout(
-                title='BTC/USDT 캔들스틱 차트',
-                yaxis_title='가격',
-                xaxis_title='시간',
-                template='plotly_dark',
-                height=500,
-                margin=dict(l=10, r=10, t=50, b=10),
-                xaxis_rangeslider_visible=False
-            )
-            
-            return fig
-        except Exception as e:
-            st.error(f"차트 생성 오류: {str(e)}")
-            return None
-    else:
-        st.warning("시장 데이터가 없습니다.")
-        return None
-
-def main_dashboard():
-    """메인 대시보드"""
-    # 상단 네비게이션 바
-    col1, col2, col3 = st.columns([6, 1, 1])
-    with col1:
-        st.title("📈 암호화폐 트레이딩 봇")
-    with col2:
-        if st.button("🔄 새로고침"):
-            st.rerun()
-    with col3:
-        if st.button("🚪 로그아웃"):
-            st.session_state.authenticated = False
-            st.session_state.username = None
-            st.rerun()
-    
-    # 거래 상태 및 제어
-    st.header("거래 상태")
-    status_col1, status_col2 = st.columns(2)
-    
-    with status_col1:
-        st.metric("현재 상태", "실행 중" if st.session_state.trading_status else "중지됨")
-    
-    with status_col2:
-        if st.session_state.trading_status:
-            if st.button("⏹️ 거래 중지", key="stop_trading"):
-                stop_trading_loop()
-        else:
-            if st.button("▶️ 거래 시작", key="start_trading"):
-                start_trading()
-    
-    # 실시간 거래 정보
-    st.header("실시간 정보")
-    
-    # 모바일에서도 보기 좋게 컬럼 조정
-    if st.checkbox("모바일 뷰", value=False):
-        cols = 1
-    else:
-        cols = 3
-    
-    metric_cols = st.columns(cols)
-    
-    with metric_cols[0]:
-        st.metric("총 거래 횟수", st.session_state.performance['total_trades'])
-        st.metric("일일 수익률", f"{st.session_state.performance['daily_return']:.2f}%")
-    
-    if cols > 1:
-        with metric_cols[1]:
-            st.metric("주간 수익률", f"{st.session_state.performance['weekly_return']:.2f}%")
-            st.metric("월간 수익률", f"{st.session_state.performance['monthly_return']:.2f}%")
-        
-        with metric_cols[2]:
-            st.metric("총 수익", f"${st.session_state.performance['total_pnl']:.2f}")
-            if st.session_state.positions:
-                st.metric("현재 포지션", st.session_state.positions[0].get('symbol', 'N/A'))
+    fig = go.Figure()
     
     # 캔들스틱 차트
-    st.header("차트")
-    with st.spinner("차트를 불러오는 중..."):
-        fig = render_chart()
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("차트 데이터를 불러오는 중입니다...")
+    fig.add_trace(go.Candlestick(
+        x=data['timestamp'],
+        open=data['open'],
+        high=data['high'],
+        low=data['low'],
+        close=data['close'],
+        name='OHLC'
+    ))
     
-    # 거래 내역
-    st.header("거래 내역")
-    if st.session_state.trades:
-        df = pd.DataFrame(st.session_state.trades)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("거래 내역이 없습니다.")
+    # 거래량 차트
+    fig.add_trace(go.Bar(
+        x=data['timestamp'],
+        y=data['volume'],
+        name='Volume'
+    ))
     
-    # 로그 표시
-    st.header("시스템 로그")
-    st.text_area("로그", "\n".join(st.session_state.logs[-50:]), height=200)
+    # 레이아웃 설정
+    fig.update_layout(
+        title=f'{symbol} Price Chart',
+        xaxis_title='Time',
+        yaxis_title='Price',
+        yaxis2_title='Volume',
+        xaxis_rangeslider_visible=False,
+        height=800,
+        template='plotly_dark'
+    )
+    
+    return fig
 
-def settings_page():
-    """설정 페이지"""
-    st.header("⚙️ 설정")
+def render_performance_metrics(report: dict):
+    """성과 지표 렌더링"""
+    if not report:
+        return
     
-    # 설정 로드
-    config = load_trading_config()
+    col1, col2, col3, col4 = st.columns(4)
     
-    # RSI 설정
-    st.subheader("RSI 설정")
-    rsi_period = st.number_input(
-        "RSI 기간",
-        min_value=5,
-        max_value=50,
-        value=config.get("rsi_period", 14),
-        step=1
-    )
-    rsi_overbought = st.number_input(
-        "과매수 기준",
-        min_value=50,
-        max_value=100,
-        value=config.get("rsi_overbought", 70),
-        step=1
-    )
-    rsi_oversold = st.number_input(
-        "과매도 기준",
-        min_value=0,
-        max_value=50,
-        value=config.get("rsi_oversold", 30),
-        step=1
-    )
+    with col1:
+        st.metric("Total Return", f"{report['summary']['total_return']:.2%}")
+        st.metric("Annual Return", f"{report['summary']['annual_return']:.2%}")
     
-    # 볼린저 밴드 설정
-    st.subheader("볼린저 밴드 설정")
-    bb_period = st.number_input(
-        "볼린저 밴드 기간",
-        min_value=5,
-        max_value=50,
-        value=config.get("bb_period", 20),
-        step=1
-    )
-    bb_std = st.number_input(
-        "표준편차",
-        min_value=1.0,
-        max_value=3.0,
-        value=config.get("bb_std", 2.0),
-        step=0.1
-    )
+    with col2:
+        st.metric("Max Drawdown", f"{report['summary']['max_drawdown']:.2%}")
+        st.metric("Sharpe Ratio", f"{report['summary']['sharpe_ratio']:.2f}")
     
-    # 리스크 관리 설정
-    st.subheader("리스크 관리")
-    max_position_size = st.number_input(
-        "최대 포지션 크기 (USDT)",
-        min_value=10.0,
-        max_value=10000.0,
-        value=config.get("max_position_size", 100.0),
-        step=10.0
-    )
-    stop_loss = st.number_input(
-        "손절 비율 (%)",
-        min_value=0.1,
-        max_value=10.0,
-        value=config.get("stop_loss", 2.0),
-        step=0.1
-    )
-    take_profit = st.number_input(
-        "익절 비율 (%)",
-        min_value=0.1,
-        max_value=20.0,
-        value=config.get("take_profit", 5.0),
-        step=0.1
-    )
+    with col3:
+        st.metric("Win Rate", f"{report['summary']['win_rate']:.2%}")
+        st.metric("Total Trades", report['summary']['total_trades'])
     
-    # 설정 저장
-    if st.button("💾 설정 저장"):
-        new_config = {
-            "rsi_period": rsi_period,
-            "rsi_overbought": rsi_overbought,
-            "rsi_oversold": rsi_oversold,
-            "bb_period": bb_period,
-            "bb_std": bb_std,
-            "max_position_size": max_position_size,
-            "stop_loss": stop_loss,
-            "take_profit": take_profit
-        }
-        
-        save_trading_config(new_config)
-        st.success("설정이 저장되었습니다.")
+    with col4:
+        st.metric("Profit Factor", f"{report['summary']['profit_factor']:.2f}")
+        st.metric("Average Trade Duration", f"{report['trade_analysis']['avg_duration']:.1f} hours")
 
-def login_form():
-    """로그인 폼 표시"""
-    st.title("🔒 로그인")
+def render_trade_history(trades: list):
+    """거래 내역 렌더링"""
+    if not trades:
+        return
     
-    with st.form("login_form"):
-        username = st.text_input("사용자 이름")
-        password = st.text_input("비밀번호", type="password")
-        submit = st.form_submit_button("로그인")
-        
-        if submit:
-            # 간단한 예시 - 실제로는 더 안전한 인증 로직이 필요함
-            if username == "admin" and password == "password":
-                st.session_state.authenticated = True
-                st.session_state.username = username
-                st.success("로그인 성공!")
-                st.rerun()
-            else:
-                st.error("사용자 이름 또는 비밀번호가 올바르지 않습니다.")
+    df = pd.DataFrame(trades)
+    df['entry_time'] = pd.to_datetime(df['entry_time'])
+    df['exit_time'] = pd.to_datetime(df['exit_time'])
+    df['duration'] = (df['exit_time'] - df['entry_time']).dt.total_seconds() / 3600
     
-    st.info("기본 계정: 사용자 이름 - admin, 비밀번호 - password")
+    st.dataframe(
+        df[['symbol', 'side', 'entry_price', 'exit_price', 'amount', 
+            'pnl', 'entry_time', 'exit_time', 'duration']],
+        use_container_width=True
+    )
 
-def require_reauth():
-    """재인증이 필요한지 확인"""
-    # 재인증이 필요하지 않음을 나타내는 임시 구현
-    return False
-
-def reauth_form():
-    """재인증 폼 표시"""
-    st.warning("세션이 만료되었습니다. 다시 로그인해주세요.")
+def render_position_info(positions: list):
+    """포지션 정보 렌더링"""
+    if not positions:
+        return
     
-    with st.form("reauth_form"):
-        password = st.text_input("비밀번호 확인", type="password")
-        submit = st.form_submit_button("확인")
-        
-        if submit:
-            # 간단한 예시 - 실제로는 더 안전한 인증 로직이 필요함
-            if password == "password":
-                st.session_state.authenticated = True
-                st.success("인증되었습니다!")
-                st.rerun()
-            else:
-                st.error("비밀번호가 올바르지 않습니다.")
+    df = pd.DataFrame(positions)
+    df['entry_time'] = pd.to_datetime(df['entry_time'])
+    df['duration'] = (datetime.now() - df['entry_time']).dt.total_seconds() / 3600
+    
+    st.dataframe(
+        df[['symbol', 'entry_price', 'current_price', 'amount', 
+            'unrealized_pnl', 'stop_loss', 'take_profit', 'duration']],
+        use_container_width=True
+    )
+
+async def update_market_data():
+    """시장 데이터 업데이트"""
+    try:
+        if st.session_state.bot and st.session_state.bot.is_running:
+            market_data = await st.session_state.bot.get_market_data()
+            if market_data is not None:
+                st.session_state.market_data = market_data
+                st.session_state.last_update = datetime.now()
+    except Exception as e:
+        logger.error(f"시장 데이터 업데이트 실패: {str(e)}")
+
+async def update_positions():
+    """포지션 정보 업데이트"""
+    try:
+        if st.session_state.bot and st.session_state.bot.is_running:
+            positions = await st.session_state.bot.get_positions()
+            if positions is not None:
+                st.session_state.positions = positions
+    except Exception as e:
+        logger.error(f"포지션 정보 업데이트 실패: {str(e)}")
+
+async def update_trades():
+    """거래 내역 업데이트"""
+    try:
+        if st.session_state.bot and st.session_state.bot.is_running:
+            trades = await st.session_state.bot.get_trades()
+            if trades is not None:
+                st.session_state.trades = trades
+    except Exception as e:
+        logger.error(f"거래 내역 업데이트 실패: {str(e)}")
+
+async def update_performance_report():
+    """성과 리포트 업데이트"""
+    try:
+        if st.session_state.trades and st.session_state.market_data:
+            analyzer = PerformanceAnalyzer()
+            report = analyzer.generate_report(
+                st.session_state.trades,
+                st.session_state.market_data
+            )
+            st.session_state.performance_report = report
+    except Exception as e:
+        logger.error(f"성과 리포트 업데이트 실패: {str(e)}")
 
 def main():
     """메인 함수"""
-    init_session_state()
+    st.title("암호화폐 트레이딩 봇")
     
-    if not st.session_state.authenticated:
-        login_form()
-    else:
-        if require_reauth():
-            reauth_form()
+    # 사이드바 설정
+    with st.sidebar:
+        st.header("설정")
+        
+        # API 설정
+        api_key = st.text_input("API 키", type="password")
+        api_secret = st.text_input("API 시크릿", type="password")
+        
+        # 거래 설정
+        symbol = st.selectbox(
+            "거래 심볼",
+            ["BTC/USDT", "ETH/USDT", "BNB/USDT"]
+        )
+        timeframe = st.selectbox(
+            "시간 프레임",
+            ["1m", "5m", "15m", "1h", "4h", "1d"]
+        )
+        initial_capital = st.number_input(
+            "초기 자본금",
+            min_value=100.0,
+            max_value=1000000.0,
+            value=10000.0,
+            step=100.0
+        )
+        
+        # 봇 제어
+        if st.button("봇 시작"):
+            if not st.session_state.bot:
+                config = {
+                    'api_key': api_key,
+                    'api_secret': api_secret,
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'initial_capital': initial_capital,
+                    'testnet': True
+                }
+                st.session_state.bot = TradingBot(config)
+                asyncio.run(st.session_state.bot.start())
+                st.success("트레이딩 봇이 시작되었습니다.")
+                
+        if st.button("봇 중지"):
+            if st.session_state.bot:
+                asyncio.run(st.session_state.bot.stop())
+                st.session_state.bot = None
+                st.success("트레이딩 봇이 중지되었습니다.")
+    
+    # 메인 콘텐츠
+    tab1, tab2, tab3, tab4 = st.tabs(["차트", "성과", "포지션", "거래 내역"])
+    
+    with tab1:
+        if st.session_state.market_data is not None:
+            fig = render_chart(st.session_state.market_data, symbol)
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            # 사이드바 메뉴
-            st.sidebar.title("메뉴")
-            menu = st.sidebar.radio(
-                "선택",
-                ["대시보드", "설정"],
-                format_func=lambda x: "📊 " + x if x == "대시보드" else "⚙️ " + x
-            )
+            st.info("시장 데이터를 불러오는 중입니다...")
+    
+    with tab2:
+        if st.session_state.performance_report is not None:
+            render_performance_metrics(st.session_state.performance_report)
             
-            if menu == "대시보드":
-                main_dashboard()
-            elif menu == "설정":
-                settings_page()
+            # 성과 차트
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("자본금 곡선")
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=st.session_state.market_data.index,
+                    y=st.session_state.market_data['equity'],
+                    name='Equity'
+                ))
+                fig.update_layout(template='plotly_dark')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.subheader("월별 수익률")
+                monthly_returns = st.session_state.performance_report['monthly_analysis']['monthly_stats']
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=list(monthly_returns.keys()),
+                        y=list(monthly_returns.values()),
+                        name='Monthly Returns'
+                    )
+                ])
+                fig.update_layout(template='plotly_dark')
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("성과 리포트를 생성하는 중입니다...")
+    
+    with tab3:
+        render_position_info(st.session_state.positions)
+    
+    with tab4:
+        render_trade_history(st.session_state.trades)
+    
+    # 실시간 업데이트
+    if st.session_state.bot and st.session_state.bot.is_running:
+        if st.session_state.last_update is None or \
+           (datetime.now() - st.session_state.last_update).seconds >= 5:
+            asyncio.run(update_market_data())
+            asyncio.run(update_positions())
+            asyncio.run(update_trades())
+            asyncio.run(update_performance_report())
+            st.experimental_rerun()
 
 if __name__ == "__main__":
+    init_session_state()
     main() 

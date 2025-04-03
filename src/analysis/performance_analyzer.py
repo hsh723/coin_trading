@@ -19,6 +19,7 @@ from src.analysis.news_analyzer import news_analyzer
 from src.database.database_manager import database_manager
 from src.utils.config_loader import get_config
 import uuid
+from ..utils.logger import setup_logger
 
 # Windows 환경에서 이벤트 루프 정책 변경
 if platform.system() == 'Windows':
@@ -27,10 +28,11 @@ if platform.system() == 'Windows':
 logger = logging.getLogger(__name__)
 
 class PerformanceAnalyzer:
+    """성과 분석 클래스"""
+    
     def __init__(self):
-        """
-        성능 분석기 초기화
-        """
+        """성과 분석 클래스 초기화"""
+        self.logger = setup_logger('performance_analyzer')
         self.model = RandomForestClassifier(n_estimators=100)
         self.scaler = StandardScaler()
         self.min_samples = 100
@@ -567,6 +569,323 @@ class PerformanceAnalyzer:
                 'total_return': results['total_return']
             }
         }
+
+    def analyze_trades(self, trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        거래 내역 분석
+        
+        Args:
+            trades (List[Dict[str, Any]]): 거래 내역
+            
+        Returns:
+            Dict[str, Any]: 거래 분석 결과
+        """
+        try:
+            if not trades:
+                return {}
+                
+            # 거래 데이터프레임 생성
+            df = pd.DataFrame(trades)
+            
+            # 기본 통계
+            total_trades = len(df)
+            winning_trades = len(df[df['pnl'] > 0])
+            losing_trades = len(df[df['pnl'] < 0])
+            win_rate = winning_trades / total_trades if total_trades > 0 else 0
+            
+            # 수익/손실 분석
+            total_pnl = df['pnl'].sum()
+            avg_pnl = df['pnl'].mean()
+            max_pnl = df['pnl'].max()
+            min_pnl = df['pnl'].min()
+            
+            # 승리/패배 거래 분석
+            winning_pnls = df[df['pnl'] > 0]['pnl']
+            losing_pnls = df[df['pnl'] < 0]['pnl']
+            
+            avg_win = winning_pnls.mean() if not winning_pnls.empty else 0
+            avg_loss = losing_pnls.mean() if not losing_pnls.empty else 0
+            max_win = winning_pnls.max() if not winning_pnls.empty else 0
+            max_loss = losing_pnls.min() if not losing_pnls.empty else 0
+            
+            # 연속 승리/패배
+            df['win'] = df['pnl'] > 0
+            df['streak'] = (df['win'] != df['win'].shift()).cumsum()
+            streaks = df.groupby('streak')['win'].agg(['count', 'first'])
+            
+            max_win_streak = streaks[streaks['first']]['count'].max()
+            max_loss_streak = streaks[~streaks['first']]['count'].max()
+            
+            # 거래 기간 분석
+            df['entry_time'] = pd.to_datetime(df['entry_time'])
+            df['exit_time'] = pd.to_datetime(df['exit_time'])
+            df['duration'] = (df['exit_time'] - df['entry_time']).dt.total_seconds() / 3600  # 시간 단위
+            
+            avg_duration = df['duration'].mean()
+            max_duration = df['duration'].max()
+            min_duration = df['duration'].min()
+            
+            return {
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'win_rate': win_rate,
+                'total_pnl': total_pnl,
+                'avg_pnl': avg_pnl,
+                'max_pnl': max_pnl,
+                'min_pnl': min_pnl,
+                'avg_win': avg_win,
+                'avg_loss': avg_loss,
+                'max_win': max_win,
+                'max_loss': max_loss,
+                'max_win_streak': max_win_streak,
+                'max_loss_streak': max_loss_streak,
+                'avg_duration': avg_duration,
+                'max_duration': max_duration,
+                'min_duration': min_duration
+            }
+            
+        except Exception as e:
+            self.logger.error(f"거래 내역 분석 실패: {str(e)}")
+            return {}
+            
+    def analyze_equity_curve(self, equity_curve: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        자본금 곡선 분석
+        
+        Args:
+            equity_curve (List[Dict[str, Any]]): 자본금 곡선 데이터
+            
+        Returns:
+            Dict[str, Any]: 자본금 곡선 분석 결과
+        """
+        try:
+            if not equity_curve:
+                return {}
+                
+            # 자본금 곡선 데이터프레임 생성
+            df = pd.DataFrame(equity_curve)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+            
+            # 수익률 계산
+            df['returns'] = df['equity'].pct_change()
+            
+            # 총 수익률
+            total_return = (df['equity'].iloc[-1] / df['equity'].iloc[0]) - 1
+            
+            # 연간 수익률
+            days = (df.index[-1] - df.index[0]).days
+            annual_return = (1 + total_return) ** (365 / days) - 1
+            
+            # 최대 낙폭
+            df['peak'] = df['equity'].cummax()
+            df['drawdown'] = (df['equity'] - df['peak']) / df['peak']
+            max_drawdown = df['drawdown'].min()
+            
+            # 낙폭 기간
+            df['drawdown_start'] = (df['drawdown'] == 0) & (df['drawdown'].shift(1) != 0)
+            df['drawdown_end'] = (df['drawdown'] == 0) & (df['drawdown'].shift(-1) != 0)
+            
+            drawdown_periods = []
+            start_idx = None
+            
+            for idx, row in df.iterrows():
+                if row['drawdown_start']:
+                    start_idx = idx
+                elif row['drawdown_end'] and start_idx is not None:
+                    drawdown_periods.append((start_idx, idx))
+                    start_idx = None
+            
+            max_drawdown_duration = max(
+                [(end - start).total_seconds() / (24 * 3600) for start, end in drawdown_periods]
+            ) if drawdown_periods else 0
+            
+            # 변동성
+            volatility = df['returns'].std() * np.sqrt(252)
+            
+            # 샤프 비율
+            risk_free_rate = 0.02  # 연간 무위험 수익률 2%
+            daily_risk_free = (1 + risk_free_rate) ** (1/252) - 1
+            excess_returns = df['returns'] - daily_risk_free
+            sharpe_ratio = np.sqrt(252) * excess_returns.mean() / excess_returns.std()
+            
+            # 소르티노 비율
+            downside_returns = df['returns'][df['returns'] < 0]
+            downside_std = downside_returns.std() * np.sqrt(252)
+            sortino_ratio = np.sqrt(252) * (df['returns'].mean() - daily_risk_free) / downside_std
+            
+            # 칼마 비율
+            calmar_ratio = annual_return / abs(max_drawdown)
+            
+            return {
+                'total_return': total_return,
+                'annual_return': annual_return,
+                'max_drawdown': max_drawdown,
+                'max_drawdown_duration': max_drawdown_duration,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'sortino_ratio': sortino_ratio,
+                'calmar_ratio': calmar_ratio
+            }
+            
+        except Exception as e:
+            self.logger.error(f"자본금 곡선 분석 실패: {str(e)}")
+            return {}
+            
+    def analyze_monthly_performance(self, equity_curve: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        월별 성과 분석
+        
+        Args:
+            equity_curve (List[Dict[str, Any]]): 자본금 곡선 데이터
+            
+        Returns:
+            Dict[str, Any]: 월별 성과 분석 결과
+        """
+        try:
+            if not equity_curve:
+                return {}
+                
+            # 자본금 곡선 데이터프레임 생성
+            df = pd.DataFrame(equity_curve)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # 월별 수익률 계산
+            df['month'] = df['timestamp'].dt.to_period('M')
+            monthly_returns = df.groupby('month')['equity'].apply(
+                lambda x: (x.iloc[-1] / x.iloc[0]) - 1
+            )
+            
+            # 월별 통계
+            monthly_stats = {
+                'mean_return': monthly_returns.mean(),
+                'median_return': monthly_returns.median(),
+                'std_return': monthly_returns.std(),
+                'positive_months': len(monthly_returns[monthly_returns > 0]),
+                'negative_months': len(monthly_returns[monthly_returns < 0]),
+                'best_month': monthly_returns.max(),
+                'worst_month': monthly_returns.min()
+            }
+            
+            # 월별 수익률 분포
+            return_distribution = {
+                '0-5%': len(monthly_returns[(monthly_returns >= 0) & (monthly_returns < 0.05)]),
+                '5-10%': len(monthly_returns[(monthly_returns >= 0.05) & (monthly_returns < 0.10)]),
+                '10-15%': len(monthly_returns[(monthly_returns >= 0.10) & (monthly_returns < 0.15)]),
+                '15%+': len(monthly_returns[monthly_returns >= 0.15]),
+                '-0-5%': len(monthly_returns[(monthly_returns < 0) & (monthly_returns >= -0.05)]),
+                '-5-10%': len(monthly_returns[(monthly_returns < -0.05) & (monthly_returns >= -0.10)]),
+                '-10-15%': len(monthly_returns[(monthly_returns < -0.10) & (monthly_returns >= -0.15)]),
+                '-15%+': len(monthly_returns[monthly_returns < -0.15])
+            }
+            
+            return {
+                'monthly_stats': monthly_stats,
+                'return_distribution': return_distribution
+            }
+            
+        except Exception as e:
+            self.logger.error(f"월별 성과 분석 실패: {str(e)}")
+            return {}
+            
+    def generate_report(self, trades: List[Dict[str, Any]], equity_curve: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        성과 리포트 생성
+        
+        Args:
+            trades (List[Dict[str, Any]]): 거래 내역
+            equity_curve (List[Dict[str, Any]]): 자본금 곡선 데이터
+            
+        Returns:
+            Dict[str, Any]: 성과 리포트
+        """
+        try:
+            # 거래 분석
+            trade_analysis = self.analyze_trades(trades)
+            
+            # 자본금 곡선 분석
+            equity_analysis = self.analyze_equity_curve(equity_curve)
+            
+            # 월별 성과 분석
+            monthly_analysis = self.analyze_monthly_performance(equity_curve)
+            
+            # 리포트 생성
+            report = {
+                'trade_analysis': trade_analysis,
+                'equity_analysis': equity_analysis,
+                'monthly_analysis': monthly_analysis,
+                'summary': {
+                    'total_return': equity_analysis.get('total_return', 0),
+                    'annual_return': equity_analysis.get('annual_return', 0),
+                    'max_drawdown': equity_analysis.get('max_drawdown', 0),
+                    'sharpe_ratio': equity_analysis.get('sharpe_ratio', 0),
+                    'win_rate': trade_analysis.get('win_rate', 0),
+                    'total_trades': trade_analysis.get('total_trades', 0),
+                    'profit_factor': abs(trade_analysis.get('total_pnl', 0) / trade_analysis.get('avg_loss', 1))
+                }
+            }
+            
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"성과 리포트 생성 실패: {str(e)}")
+            return {}
+            
+    def compare_with_benchmark(self, equity_curve: List[Dict[str, Any]], benchmark: pd.Series) -> Dict[str, Any]:
+        """
+        벤치마크와의 비교 분석
+        
+        Args:
+            equity_curve (List[Dict[str, Any]]): 자본금 곡선 데이터
+            benchmark (pd.Series): 벤치마크 수익률
+            
+        Returns:
+            Dict[str, Any]: 벤치마크 비교 분석 결과
+        """
+        try:
+            # 자본금 곡선 데이터프레임 생성
+            df = pd.DataFrame(equity_curve)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+            
+            # 수익률 계산
+            strategy_returns = df['equity'].pct_change()
+            
+            # 벤치마크와 일자 맞추기
+            benchmark = benchmark.reindex(strategy_returns.index)
+            
+            # 상관관계
+            correlation = strategy_returns.corr(benchmark)
+            
+            # 베타
+            covariance = strategy_returns.cov(benchmark)
+            benchmark_variance = benchmark.var()
+            beta = covariance / benchmark_variance
+            
+            # 알파
+            risk_free_rate = 0.02  # 연간 무위험 수익률 2%
+            daily_risk_free = (1 + risk_free_rate) ** (1/252) - 1
+            alpha = (strategy_returns.mean() - daily_risk_free) - beta * (benchmark.mean() - daily_risk_free)
+            
+            # 정보 비율
+            tracking_error = (strategy_returns - benchmark).std() * np.sqrt(252)
+            information_ratio = (strategy_returns.mean() - benchmark.mean()) * np.sqrt(252) / tracking_error
+            
+            # 승률
+            outperformance = (strategy_returns > benchmark).mean()
+            
+            return {
+                'correlation': correlation,
+                'beta': beta,
+                'alpha': alpha,
+                'information_ratio': information_ratio,
+                'outperformance': outperformance
+            }
+            
+        except Exception as e:
+            self.logger.error(f"벤치마크 비교 분석 실패: {str(e)}")
+            return {}
 
 # 전역 성능 분석기 인스턴스
 performance_analyzer = PerformanceAnalyzer() 
