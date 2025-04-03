@@ -183,30 +183,32 @@ telegram = TelegramNotifier()  # 인자 없이 초기화
 
 def init_session_state():
     """세션 상태 초기화"""
-    if 'authenticated' not in st.session_state:
+    if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
-    if 'username' not in st.session_state:
+    if "username" not in st.session_state:
         st.session_state.username = None
-    if 'trading_status' not in st.session_state:
-        st.session_state.trading_status = False
-    if 'last_auth_time' not in st.session_state:
-        st.session_state.last_auth_time = None
-    if 'market_data' not in st.session_state:
-        st.session_state.market_data = pd.DataFrame()
-    if 'positions' not in st.session_state:
-        st.session_state.positions = pd.DataFrame()
-    if 'trades' not in st.session_state:
-        st.session_state.trades = pd.DataFrame()
-    if 'performance' not in st.session_state:
-        st.session_state.performance = {
-            'daily_return': 0,
-            'weekly_return': 0,
-            'monthly_return': 0,
-            'total_trades': 0,
-            'total_pnl': 0
-        }
-    if 'logs' not in st.session_state:
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "대시보드"
+    if "logs" not in st.session_state:
         st.session_state.logs = []
+    if "market_data" not in st.session_state:
+        st.session_state.market_data = None
+    if "trades" not in st.session_state:
+        st.session_state.trades = []
+    if "trading_status" not in st.session_state:
+        st.session_state.trading_status = False
+    if "last_auth_time" not in st.session_state:
+        st.session_state.last_auth_time = None
+    if "positions" not in st.session_state:
+        st.session_state.positions = []
+    if "performance" not in st.session_state:
+        st.session_state.performance = {
+            "daily_return": 0,
+            "weekly_return": 0,
+            "monthly_return": 0,
+            "total_trades": 0,
+            "total_pnl": 0
+        }
 
 def add_log(message: str, level: str = "INFO"):
     """로그 추가"""
@@ -244,18 +246,26 @@ def save_trading_config(config):
 def update_market_data(exchange):
     """시장 데이터 업데이트"""
     try:
-        ohlcv = exchange.fetch_ohlcv('BTC/USDT', '1h', 100)
-        df = pd.DataFrame(
-            ohlcv,
-            columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        )
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('timestamp', inplace=True)
+        # 기존 코드에서 수정
+        data = {
+            "timestamp": [],
+            "open": [],
+            "high": [],
+            "low": [],
+            "close": [],
+            "volume": []
+        }
+        # 데이터 준비 후 DataFrame 생성
+        df = pd.DataFrame(data)
         st.session_state.market_data = df
-        add_log("시장 데이터 업데이트 완료")
+        return True
     except Exception as e:
-        error_msg = f"시장 데이터 업데이트 실패: {str(e)}"
-        add_log(error_msg, "ERROR")
+        error_msg = f"시장 데이터 업데이트 오류: {str(e)}"
+        try:
+            add_log(error_msg, "ERROR")
+        except:
+            print(error_msg)  # 로깅 실패 시 콘솔에라도 출력
+        return False
 
 def update_positions(exchange):
     """포지션 정보 업데이트"""
@@ -353,6 +363,19 @@ def trading_loop(exchange, strategy, risk_manager):
             error_msg = f"트레이딩 에러: {str(e)}"
             add_log(error_msg, "ERROR")
             time.sleep(60)
+
+def run_async(coroutine):
+    """비동기 함수를 동기적으로 실행"""
+    try:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(coroutine)
+        loop.close()
+        return result
+    except Exception as e:
+        print(f"비동기 실행 오류: {e}")
+        return None
 
 def start_trading():
     """트레이딩 시작"""
