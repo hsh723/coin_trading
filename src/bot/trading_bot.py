@@ -390,11 +390,17 @@ class TradingBot:
             if not self.market_data:
                 return {}
                 
+            # OHLCV 데이터를 DataFrame으로 변환
+            df = pd.DataFrame(self.market_data['ohlcv'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            
             return {
+                'ohlcv': df,
                 'current_price': self.market_data['current_price'],
                 'volatility': self.market_data['volatility'],
                 'trend_strength': self.market_data['trend_strength'],
-                'indicators': self.technical_analyzer.calculate_indicators(self.market_data['ohlcv'])
+                'indicators': self.technical_analyzer.calculate_indicators(df)
             }
             
         except Exception as e:

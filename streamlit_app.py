@@ -18,6 +18,7 @@ from src.bot.trading_bot import TradingBot
 from src.utils.logger import setup_logger
 from src.analysis.performance_analyzer import PerformanceAnalyzer
 from src.database.database import Database
+from typing import Dict, Any
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -181,25 +182,31 @@ def get_sample_market_data():
         'volume': [1000 + i * 100 for i in range(len(date_range))]
     })
 
-def render_chart(data: pd.DataFrame, symbol: str):
+def render_chart(data: Dict[str, Any], symbol: str):
     """차트 렌더링"""
+    if not data or 'ohlcv' not in data:
+        st.warning("시장 데이터가 없습니다.")
+        return None
+        
+    df = data['ohlcv']
     fig = go.Figure()
     
     # 캔들스틱 차트
     fig.add_trace(go.Candlestick(
-        x=data['timestamp'],
-        open=data['open'],
-        high=data['high'],
-        low=data['low'],
-        close=data['close'],
+        x=df.index,
+        open=df['open'],
+        high=df['high'],
+        low=df['low'],
+        close=df['close'],
         name='OHLC'
     ))
     
     # 거래량 차트
     fig.add_trace(go.Bar(
-        x=data['timestamp'],
-        y=data['volume'],
-        name='Volume'
+        x=df.index,
+        y=df['volume'],
+        name='Volume',
+        yaxis='y2'
     ))
     
     # 레이아웃 설정
@@ -208,6 +215,10 @@ def render_chart(data: pd.DataFrame, symbol: str):
         xaxis_title='Time',
         yaxis_title='Price',
         yaxis2_title='Volume',
+        yaxis2=dict(
+            overlaying='y',
+            side='right'
+        ),
         xaxis_rangeslider_visible=False,
         height=800,
         template='plotly_dark'
@@ -464,7 +475,8 @@ def main():
     with tab1:
         if st.session_state.market_data is not None:
             fig = render_chart(st.session_state.market_data, symbol)
-            st.plotly_chart(fig, use_container_width=True)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("시장 데이터를 불러오는 중입니다...")
     
