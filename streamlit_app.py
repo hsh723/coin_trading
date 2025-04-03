@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from dotenv import load_dotenv
 import asyncio
+from typing import Dict, Any, List, Optional
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
