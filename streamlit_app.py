@@ -505,8 +505,8 @@ def main_dashboard():
         
         with metric_cols[2]:
             st.metric("총 수익", st.session_state.performance['total_pnl'])
-            if not st.session_state.positions.empty:
-                st.metric("현재 포지션", st.session_state.positions.iloc[0]['symbol'])
+            if st.session_state.positions:  # 리스트가 비어있지 않은지 확인
+                st.metric("현재 포지션", st.session_state.positions[0].get('symbol', 'N/A'))
     
     # 캔들스틱 차트
     st.header("차트")
