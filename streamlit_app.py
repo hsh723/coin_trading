@@ -96,11 +96,17 @@ except ImportError as e:
             self.risk_per_trade = 0.02
         def get_capital(self):
             return 1000.0
+    # 임시 TelegramNotifier 클래스 재정의
     class TelegramNotifier:
-        def __init__(self, *args, **kwargs):
-            pass
-        def send_message(self, *args):
-            pass
+        """임시 TelegramNotifier 클래스"""
+        def __init__(self, bot_token=None, chat_id=None):
+            self.bot_token = bot_token or os.getenv("TELEGRAM_BOT_TOKEN", "")
+            self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
+            
+        def send_message(self, message):
+            """텔레그램 메시지 전송 (임시 구현)"""
+            st.toast(f"텔레그램 알림: {message}", icon="📱")
+            return True
 
 # 환경 변수 로드
 load_dotenv()
@@ -173,7 +179,7 @@ trading_bot = TradingBot()
 trading_thread = None
 stop_trading = False
 telegram = TelegramNotifier(
-    token=os.getenv("TELEGRAM_BOT_TOKEN"),
+    bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
     chat_id=os.getenv("TELEGRAM_CHAT_ID")
 )
 
