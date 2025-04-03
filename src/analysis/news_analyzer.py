@@ -9,18 +9,19 @@ from typing import List, Dict, Any, Optional
 from textblob import TextBlob
 import pandas as pd
 import numpy as np
-from src.data.news_collector import news_collector
-from src.utils.database import db_manager
 import os
 from newsapi import NewsApiClient
 from newspaper import Article
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
-from ..utils.logger import setup_logger
 import requests
 from bs4 import BeautifulSoup
-from ..utils.database import DatabaseManager
 import feedparser
+
+# 내부 모듈 import
+from ..data.news_collector import news_collector
+from ..utils.database import DatabaseManager
+from ..utils.logger import setup_logger
 
 logger = logging.getLogger(__name__)
 
