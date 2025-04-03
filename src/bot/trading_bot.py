@@ -23,6 +23,9 @@ class TradingBot:
         self.logger = setup_logger('trading_bot')
         self.config = config
         
+        # 데이터베이스 초기화
+        self.database = Database()
+        
         # 컴포넌트 초기화
         self.exchange = BinanceExchange(
             api_key=config.get('api_key'),
@@ -30,13 +33,12 @@ class TradingBot:
             testnet=config.get('testnet', True)
         )
         
-        self.news_analyzer = NewsAnalyzer()
-        self.technical_analyzer = TechnicalAnalyzer()
+        self.news_analyzer = NewsAnalyzer(db=self.database)
+        self.technical_analyzer = TechnicalAnalyzer(db=self.database)
         self.strategy = IntegratedStrategy()
         self.risk_manager = RiskManager(
             initial_capital=config.get('initial_capital', 10000.0)
         )
-        self.database = Database()
         
         # 상태 변수
         self.is_running = False

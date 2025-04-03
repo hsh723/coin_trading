@@ -458,14 +458,32 @@ def main():
                     'testnet': True
                 }
                 st.session_state.bot = TradingBot(config)
-                asyncio.run(st.session_state.bot.start())
-                st.success("트레이딩 봇이 시작되었습니다.")
+                
+                # 비동기 실행을 위한 이벤트 루프 생성
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    # 봇 시작
+                    loop.run_until_complete(st.session_state.bot.start())
+                    st.success("트레이딩 봇이 시작되었습니다.")
+                except Exception as e:
+                    st.error(f"봇 시작 중 오류 발생: {str(e)}")
+                finally:
+                    loop.close()
                 
         if st.button("봇 중지"):
             if st.session_state.bot:
-                asyncio.run(st.session_state.bot.stop())
-                st.session_state.bot = None
-                st.success("트레이딩 봇이 중지되었습니다.")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(st.session_state.bot.stop())
+                    st.session_state.bot = None
+                    st.success("트레이딩 봇이 중지되었습니다.")
+                except Exception as e:
+                    st.error(f"봇 중지 중 오류 발생: {str(e)}")
+                finally:
+                    loop.close()
     
     # 메인 콘텐츠
     tab1, tab2, tab3, tab4 = st.tabs(["차트", "성과", "포지션", "거래 내역"])
