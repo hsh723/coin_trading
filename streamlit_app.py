@@ -297,11 +297,8 @@ def update_trades(exchange):
     """거래 내역 업데이트"""
     try:
         trades = exchange.fetch_my_trades('BTC/USDT', limit=10)
-        if trades:
-            df = pd.DataFrame(trades)
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            st.session_state.trades = df
-            add_log("거래 내역 업데이트 완료")
+        st.session_state.trades = trades
+        add_log("거래 내역 업데이트 완료")
     except Exception as e:
         error_msg = f"거래 내역 업데이트 실패: {str(e)}"
         add_log(error_msg, "ERROR")
