@@ -435,7 +435,7 @@ def stop_trading_loop():
 
 def render_chart():
     """차트 렌더링"""
-    if not st.session_state.market_data.empty:
+    if st.session_state.market_data is not None and not st.session_state.market_data.empty:
         fig = go.Figure(data=[go.Candlestick(
             x=st.session_state.market_data.index,
             open=st.session_state.market_data['open'],
@@ -445,13 +445,16 @@ def render_chart():
         )])
         
         fig.update_layout(
-            height=400,
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis_rangeslider_visible=False
+            title='BTC/USDT 캔들스틱 차트',
+            yaxis_title='가격',
+            xaxis_title='시간',
+            template='plotly_dark'
         )
         
         return fig
-    return None
+    else:
+        st.warning("시장 데이터가 없습니다.")
+        return None
 
 def main_dashboard():
     """메인 대시보드"""
