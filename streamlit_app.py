@@ -528,7 +528,7 @@ def main():
                 asyncio.run(update_trades())
                 asyncio.run(update_performance_report())
                 st.session_state.last_update = datetime.now()
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"데이터 업데이트 중 오류 발생: {str(e)}")
 

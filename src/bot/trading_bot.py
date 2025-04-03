@@ -125,7 +125,7 @@ class TradingBot:
         """시장 데이터 업데이트"""
         try:
             # OHLCV 데이터 조회
-            ohlcv = self.exchange.fetch_ohlcv(
+            ohlcv = await self.exchange.fetch_ohlcv(
                 symbol=self.config['symbol'],
                 timeframe=self.config['timeframe'],
                 limit=100
@@ -138,6 +138,7 @@ class TradingBot:
             # DataFrame 변환
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
             
             # 기술적 지표 계산
             df = self.technical_analyzer.calculate_indicators(df)

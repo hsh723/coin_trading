@@ -19,51 +19,32 @@ class IntegratedStrategy:
         self.news_analyzer = NewsAnalyzer(db=self.db)
         self.technical_analyzer = TechnicalAnalyzer(db=self.db)
         
-    def generate_signals(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """통합 거래 신호 생성"""
+    def generate_signal(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """거래 신호 생성"""
         try:
-            if not market_data or not market_data.get('ohlcv'):
+            if not market_data or 'ohlcv' not in market_data:
                 return {'signal': 'neutral', 'strength': 0.0}
                 
             # 기술적 분석 신호
-            technical_signals = self.technical_analyzer.generate_signals(market_data['ohlcv'])
+            technical_signal = self.technical_analyzer.analyze(market_data['ohlcv'])
             
             # 뉴스 분석 신호
-            news_signals = self.news_analyzer.get_market_sentiment(market_data['symbol'])
+            news_signal = self.news_analyzer.analyze(market_data['symbol'])
             
             # 신호 통합
-            signal_strength = 0.0
-            signal = 'neutral'
-            
-            # 기술적 분석 신호 반영
-            if technical_signals['signal'] == 'buy':
-                signal_strength += technical_signals['strength']
-                signal = 'buy'
-            elif technical_signals['signal'] == 'sell':
-                signal_strength -= technical_signals['strength']
-                signal = 'sell'
-                
-            # 뉴스 분석 신호 반영
-            if news_signals['sentiment'] == 'positive':
-                signal_strength += news_signals['sentiment_score']
-            elif news_signals['sentiment'] == 'negative':
-                signal_strength -= abs(news_signals['sentiment_score'])
-                
-            # 최종 신호 결정
-            if signal_strength > 0.5:
-                final_signal = 'buy'
-            elif signal_strength < -0.5:
-                final_signal = 'sell'
+            if technical_signal['signal'] == 'buy' and news_signal['sentiment'] > 0:
+                return {
+                    'signal': 'buy',
+                    'strength': (technical_signal['strength'] + news_signal['sentiment']) / 2
+                }
+            elif technical_signal['signal'] == 'sell' and news_signal['sentiment'] < 0:
+                return {
+                    'signal': 'sell',
+                    'strength': (technical_signal['strength'] + abs(news_signal['sentiment'])) / 2
+                }
             else:
-                final_signal = 'neutral'
+                return {'signal': 'neutral', 'strength': 0.0}
                 
-            return {
-                'signal': final_signal,
-                'strength': abs(signal_strength),
-                'technical': technical_signals,
-                'news': news_signals
-            }
-            
         except Exception as e:
             self.logger.error(f"거래 신호 생성 실패: {str(e)}")
             return {'signal': 'neutral', 'strength': 0.0}
