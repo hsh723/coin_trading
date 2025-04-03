@@ -106,37 +106,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 전역 변수
-db = DatabaseManager()
-auth = AuthManager()
-trading_bot = TradingBot()
-trading_thread = None
-stop_trading = False
-telegram = TelegramNotifier()  # 인자 없이 초기화
-
 # 로거 설정
 logger = setup_logger('streamlit_app')
-
-# 세션 상태 초기화
-if 'bot' not in st.session_state:
-    st.session_state.bot = None
-if 'market_data' not in st.session_state:
-    st.session_state.market_data = None
-if 'positions' not in st.session_state:
-    st.session_state.positions = []
-if 'trades' not in st.session_state:
-    st.session_state.trades = []
-if 'last_update' not in st.session_state:
-    st.session_state.last_update = None
-if 'performance_report' not in st.session_state:
-    st.session_state.performance_report = None
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = os.getenv('BINANCE_API_KEY', '')
-if 'api_secret' not in st.session_state:
-    st.session_state.api_secret = os.getenv('BINANCE_API_SECRET', '')
-
-# 데이터베이스 초기화
-db = Database()
 
 def init_session_state():
     """세션 상태 초기화"""
