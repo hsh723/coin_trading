@@ -14,6 +14,50 @@ import time
 from pathlib import Path
 from dotenv import load_dotenv
 
+# 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
+st.set_page_config(
+    page_title="코인 자동매매 시스템",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# 모듈 임포트
+import sys
+import os
+import time
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import yaml
+import threading
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 모듈 경로 문제 해결을 위한 임시 조치
+class TradingBot:
+    """임시 TradingBot 클래스"""
+    def __init__(self, *args, **kwargs):
+        self.running = False
+        self.status = "초기화"
+        
+    def start(self):
+        self.running = True
+        self.status = "실행 중"
+        return True
+        
+    def stop(self):
+        self.running = False
+        self.status = "중지됨"
+        return True
+    
+    def get_status(self):
+        return {
+            "running": self.running,
+            "status": self.status,
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
 # 프로젝트 루트 경로 추가
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -22,7 +66,6 @@ try:
     from src.utils.database import DatabaseManager
     from src.utils.auth import AuthManager
     from src.utils.logger import logger
-    from src.trading_bot import TradingBot
     from src.exchange.binance import BinanceExchange
     from src.strategies.integrated import IntegratedStrategy
     from src.risk.manager import RiskManager
@@ -30,13 +73,6 @@ try:
 except ImportError as e:
     st.error(f"모듈 임포트 오류: {str(e)}")
     # 임시 대체 클래스 정의
-    class TradingBot:
-        def __init__(self, *args, **kwargs):
-            pass
-        def start(self):
-            pass
-        def stop(self):
-            pass
     class BinanceExchange:
         def __init__(self, *args, **kwargs):
             pass
@@ -68,14 +104,6 @@ except ImportError as e:
 
 # 환경 변수 로드
 load_dotenv()
-
-# 페이지 설정
-st.set_page_config(
-    page_title="암호화폐 트레이딩 봇",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # CSS 스타일 정의
 st.markdown("""
@@ -141,7 +169,7 @@ st.markdown("""
 # 전역 변수
 db = DatabaseManager()
 auth = AuthManager()
-trading_bot = None
+trading_bot = TradingBot()
 trading_thread = None
 stop_trading = False
 telegram = TelegramNotifier(
