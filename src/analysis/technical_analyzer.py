@@ -18,41 +18,51 @@ class TechnicalAnalyzer:
         self.logger = logging.getLogger(__name__)
         self.db = db
         
-    def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """기술적 지표 계산"""
+    def calculate_indicators(self, df: pd.DataFrame) -> Dict:
+        """모든 기술적 지표 계산"""
         try:
-            # 이동평균선
-            df['ma20'] = ta.trend.sma_indicator(df['close'], window=20)
-            df['ma50'] = ta.trend.sma_indicator(df['close'], window=50)
-            df['ma200'] = ta.trend.sma_indicator(df['close'], window=200)
+            if df is None or df.empty:
+                return {}
+                
+            # 기본 지표 계산
+            df = self.calculate_basic_indicators(df)
             
-            # RSI
-            df['rsi'] = ta.momentum.rsi(df['close'], window=14)
+            # 추세 지표 계산
+            df = self.calculate_trend_indicators(df)
             
-            # MACD
-            macd = ta.trend.MACD(df['close'])
-            df['macd'] = macd.macd()
-            df['macd_signal'] = macd.macd_signal()
-            df['macd_hist'] = macd.macd_diff()
+            # 모멘텀 지표 계산
+            df = self.calculate_momentum_indicators(df)
             
-            # 볼린저 밴드
-            bollinger = ta.volatility.BollingerBands(df['close'])
-            df['bb_upper'] = bollinger.bollinger_hband()
-            df['bb_middle'] = bollinger.bollinger_mavg()
-            df['bb_lower'] = bollinger.bollinger_lband()
+            # 변동성 지표 계산
+            df = self.calculate_volatility_indicators(df)
             
-            # ADX
-            adx = ta.trend.ADXIndicator(df['high'], df['low'], df['close'])
-            df['adx'] = adx.adx()
+            # 거래량 지표 계산
+            df = self.calculate_volume_indicators(df)
             
-            # ATR
-            df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'])
+            # 최신 데이터 추출
+            latest = df.iloc[-1]
             
-            return df
+            # 지표 결과 반환
+            return {
+                'ma20': latest['ma20'],
+                'ma50': latest['ma50'],
+                'ma200': latest['ma200'],
+                'rsi': latest['rsi'],
+                'macd': latest['macd'],
+                'macd_signal': latest['macd_signal'],
+                'macd_hist': latest['macd_hist'],
+                'bb_upper': latest['bb_upper'],
+                'bb_middle': latest['bb_middle'],
+                'bb_lower': latest['bb_lower'],
+                'adx': latest['adx'],
+                'atr': latest['atr'],
+                'vwap': latest['vwap'],
+                'obv': latest['obv']
+            }
             
         except Exception as e:
             self.logger.error(f"기술적 지표 계산 실패: {str(e)}")
-            return df
+            return {}
             
     def calculate_volatility(self, df: pd.DataFrame) -> float:
         """변동성 계산"""

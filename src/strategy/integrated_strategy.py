@@ -19,94 +19,53 @@ class IntegratedStrategy:
         self.news_analyzer = NewsAnalyzer(db=self.db)
         self.technical_analyzer = TechnicalAnalyzer(db=self.db)
         
-    def generate_signal(self, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        거래 신호 생성
-        
-        Args:
-            market_data (Dict[str, Any]): 시장 데이터
-            
-        Returns:
-            Optional[Dict[str, Any]]: 거래 신호
-        """
+    def generate_signals(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """통합 거래 신호 생성"""
         try:
-            # 기술적 분석
-            df = market_data.get('ohlcv')
-            if df is None or df.empty:
-                self.logger.warning("OHLCV 데이터가 없습니다.")
-                return None
+            if not market_data or not market_data.get('ohlcv'):
+                return {'signal': 'neutral', 'strength': 0.0}
                 
-            # 기술적 지표 계산
-            df = self.technical_analyzer.calculate_indicators(df)
-            
             # 기술적 분석 신호
-            technical_signal = self.technical_analyzer.generate_signals(df)
+            technical_signals = self.technical_analyzer.generate_signals(market_data['ohlcv'])
             
-            # 뉴스 분석
-            news_sentiment = self.news_analyzer.get_market_sentiment('BTC')
+            # 뉴스 분석 신호
+            news_signals = self.news_analyzer.get_market_sentiment(market_data['symbol'])
             
             # 신호 통합
-            final_signal = self._integrate_signals(technical_signal, news_sentiment)
+            signal_strength = 0.0
+            signal = 'neutral'
             
-            if final_signal['signal'] != 'neutral':
-                self.logger.info(f"거래 신호 생성: {final_signal}")
-                
-            return final_signal
-            
-        except Exception as e:
-            self.logger.error(f"거래 신호 생성 실패: {str(e)}")
-            return None
-            
-    def _integrate_signals(self, technical: Dict[str, Any], news: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        기술적 분석과 뉴스 분석 신호 통합
-        
-        Args:
-            technical (Dict[str, Any]): 기술적 분석 신호
-            news (Dict[str, Any]): 뉴스 분석 신호
-            
-        Returns:
-            Dict[str, Any]: 통합된 거래 신호
-        """
-        try:
-            # 기술적 분석 가중치
-            tech_weight = 0.7
-            # 뉴스 분석 가중치
-            news_weight = 0.3
-            
-            # 기술적 분석 점수
-            tech_score = 0.0
-            if technical['signal'] == 'buy':
-                tech_score = technical['strength']
-            elif technical['signal'] == 'sell':
-                tech_score = -technical['strength']
-                
-            # 뉴스 분석 점수
-            news_score = news['sentiment_score']
-            
-            # 최종 점수 계산
-            final_score = (tech_score * tech_weight) + (news_score * news_weight)
-            
-            # 신호 결정
-            if final_score > 0.3:
+            # 기술적 분석 신호 반영
+            if technical_signals['signal'] == 'buy':
+                signal_strength += technical_signals['strength']
                 signal = 'buy'
-                strength = min(final_score, 1.0)
-            elif final_score < -0.3:
+            elif technical_signals['signal'] == 'sell':
+                signal_strength -= technical_signals['strength']
                 signal = 'sell'
-                strength = min(abs(final_score), 1.0)
+                
+            # 뉴스 분석 신호 반영
+            if news_signals['sentiment'] == 'positive':
+                signal_strength += news_signals['sentiment_score']
+            elif news_signals['sentiment'] == 'negative':
+                signal_strength -= abs(news_signals['sentiment_score'])
+                
+            # 최종 신호 결정
+            if signal_strength > 0.5:
+                final_signal = 'buy'
+            elif signal_strength < -0.5:
+                final_signal = 'sell'
             else:
-                signal = 'neutral'
-                strength = 0.0
+                final_signal = 'neutral'
                 
             return {
-                'signal': signal,
-                'strength': strength,
-                'technical': technical,
-                'news': news
+                'signal': final_signal,
+                'strength': abs(signal_strength),
+                'technical': technical_signals,
+                'news': news_signals
             }
             
         except Exception as e:
-            self.logger.error(f"신호 통합 실패: {str(e)}")
+            self.logger.error(f"거래 신호 생성 실패: {str(e)}")
             return {'signal': 'neutral', 'strength': 0.0}
             
     def calculate_position_size(self, capital: float, risk_per_trade: float, 
