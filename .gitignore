@@ -1,0 +1,47 @@
+# 보안 파일 제외
+*.pem
+.env
+.env.*
+
+# 캐시/로그 파일 제외
+__pycache__/
+logs/
+venv/
+
+# IDE 설정 파일
+.vscode/
+.idea/
+
+# 운영체제 관련 파일
+.DS_Store
+Thumbs.db
+
+# Python 관련
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 데이터베이스 파일
+*.db
+*.sqlite3
+
+# 임시 파일
+*.log
+*.tmp
+*.temp 
