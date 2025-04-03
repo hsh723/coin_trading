@@ -7,20 +7,26 @@ import logging
 from typing import Optional
 from .config import config_manager
 from .logger import logger
+import telegram
 
 class TelegramNotifier:
-    def __init__(self):
-        """텔레그램 알림기 초기화"""
-        self.bot_token = config_manager.get_config('TELEGRAM_BOT_TOKEN')
-        self.chat_id = config_manager.get_config('TELEGRAM_CHAT_ID')
-        self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
-        
-        if not self.bot_token or not self.chat_id:
-            logger.warning("텔레그램 설정이 없습니다. 알림이 비활성화됩니다.")
+    """텔레그램 알림 클래스"""
     
-    def send_message(self, message: str) -> bool:
+    def __init__(self, bot_token: str, chat_id: str):
         """
-        텔레그램 메시지 전송
+        초기화
+        
+        Args:
+            bot_token (str): 텔레그램 봇 토큰
+            chat_id (str): 채팅 ID
+        """
+        self.logger = logging.getLogger('telegram_notifier')
+        self.bot = telegram.Bot(token=bot_token)
+        self.chat_id = chat_id
+        
+    async def send_message(self, message: str) -> bool:
+        """
+        메시지 전송
         
         Args:
             message (str): 전송할 메시지
@@ -28,25 +34,14 @@ class TelegramNotifier:
         Returns:
             bool: 전송 성공 여부
         """
-        if not self.bot_token or not self.chat_id:
-            return False
-        
         try:
-            url = f"{self.base_url}/sendMessage"
-            data = {
-                "chat_id": self.chat_id,
-                "text": message,
-                "parse_mode": "HTML"
-            }
-            
-            response = requests.post(url, json=data)
-            response.raise_for_status()
-            
-            logger.debug(f"텔레그램 메시지 전송 성공: {message}")
+            await self.bot.send_message(
+                chat_id=self.chat_id,
+                text=message
+            )
             return True
-            
         except Exception as e:
-            logger.error(f"텔레그램 메시지 전송 실패: {str(e)}")
+            self.logger.error(f"메시지 전송 실패: {str(e)}")
             return False
     
     def send_error(self, error: Exception, context: Optional[str] = None) -> bool:

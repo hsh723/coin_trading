@@ -24,36 +24,31 @@ class TradingBot(ABC):
         Args:
             config (Dict[str, Any]): 설정 정보
         """
-        self.logger = setup_logger('trading_bot')
         self.config = config
-        
-        # 데이터베이스 초기화
+        self.logger = setup_logger('trading_bot')
         self.database = DatabaseManager()
-        
-        # 컴포넌트 초기화
         self.exchange = BinanceExchange(
             api_key=config.get('api_key'),
             api_secret=config.get('api_secret'),
             testnet=config.get('testnet', True)
         )
-        
-        self.news_analyzer = NewsAnalyzer(db=self.database)
-        self.technical_analyzer = TechnicalAnalyzer(db=self.database)
         self.strategy = IntegratedStrategy(db=self.database)
         self.risk_manager = RiskManager(
             initial_capital=config.get('initial_capital', 10000.0)
         )
-        self.telegram = TelegramNotifier(
-            token=config.get('telegram_token'),
-            chat_id=config.get('telegram_chat_id')
-        )
         
-        # 상태 변수
-        self.is_running = False
-        self.current_position = None
-        self.last_signal = None
+        # 텔레그램 알림 설정
+        bot_token = config.get('telegram_bot_token')
+        chat_id = config.get('telegram_chat_id')
+        if bot_token and chat_id:
+            self.telegram = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+        else:
+            self.telegram = None
+            self.logger.warning("텔레그램 설정이 없습니다. 알림이 비활성화됩니다.")
+        
         self.market_data = None
-        self._task = None
+        self.current_position = None
+        self.is_running = False
         self.last_update = None
         
     @property
