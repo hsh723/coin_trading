@@ -96,16 +96,17 @@ except ImportError as e:
             self.risk_per_trade = 0.02
         def get_capital(self):
             return 1000.0
-    # 임시 TelegramNotifier 클래스 재정의
+    # 임시 TelegramNotifier 클래스 재구현
     class TelegramNotifier:
-        """임시 TelegramNotifier 클래스"""
-        def __init__(self, bot_token=None, chat_id=None):
-            self.bot_token = bot_token or os.getenv("TELEGRAM_BOT_TOKEN", "")
-            self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
+        """임시 구현된 TelegramNotifier"""
+        def __init__(self, **kwargs):
+            # 어떤 인자든 받을 수 있도록 **kwargs 사용
+            self.config = kwargs
+            st.toast("텔레그램 알림 시스템 초기화됨", icon="📱")
             
         def send_message(self, message):
-            """텔레그램 메시지 전송 (임시 구현)"""
-            st.toast(f"텔레그램 알림: {message}", icon="📱")
+            """메시지 전송 시뮬레이션"""
+            st.toast(f"텔레그램: {message[:30]}...", icon="📱")
             return True
 
 # 환경 변수 로드
@@ -178,10 +179,7 @@ auth = AuthManager()
 trading_bot = TradingBot()
 trading_thread = None
 stop_trading = False
-telegram = TelegramNotifier(
-    bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
-    chat_id=os.getenv("TELEGRAM_CHAT_ID")
-)
+telegram = TelegramNotifier()  # 인자 없이 초기화
 
 def init_session_state():
     """세션 상태 초기화"""
