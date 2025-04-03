@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>트레이딩 성과 보고서</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .section-title {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .metric-card {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .metric-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .chart-container {
+            margin-bottom: 30px;
+            padding: 15px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .positive {
+            color: #28a745;
+        }
+        .negative {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>트레이딩 성과 보고서</h1>
+        <p class="text-center">생성 시간: {{ timestamp }}</p>
+        
+        <!-- 종합 성과 지표 -->
+        <div class="section">
+            <h2 class="section-title">종합 성과 지표</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value {% if metrics.total_return > 0 %}positive{% else %}negative{% endif %}">
+                        {{ "%.2f"|format(metrics.total_return * 100) }}%
+                    </div>
+                    <div class="metric-label">총 수익률</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value {% if metrics.win_rate > 0.5 %}positive{% else %}negative{% endif %}">
+                        {{ "%.2f"|format(metrics.win_rate * 100) }}%
+                    </div>
+                    <div class="metric-label">승률</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value {% if metrics.profit_factor > 1 %}positive{% else %}negative{% endif %}">
+                        {{ "%.2f"|format(metrics.profit_factor) }}
+                    </div>
+                    <div class="metric-label">수익 팩터</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value {% if metrics.max_drawdown < 0.1 %}positive{% else %}negative{% endif %}">
+                        {{ "%.2f"|format(metrics.max_drawdown * 100) }}%
+                    </div>
+                    <div class="metric-label">최대 낙폭</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 차트 -->
+        <div class="section">
+            <h2 class="section-title">성과 차트</h2>
+            <div class="chart-container">
+                <div id="equity_curve"></div>
+            </div>
+            <div class="chart-container">
+                <div id="returns_distribution"></div>
+            </div>
+            <div class="chart-container">
+                <div id="daily_returns"></div>
+            </div>
+            <div class="chart-container">
+                <div id="drawdown"></div>
+            </div>
+        </div>
+        
+        <!-- 포지션별 성과 -->
+        <div class="section">
+            <h2 class="section-title">포지션별 성과</h2>
+            {% for symbol, metrics in position_metrics.items() %}
+            <div class="position-metrics">
+                <h3>{{ symbol }}</h3>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value {% if metrics.total_return > 0 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(metrics.total_return * 100) }}%
+                        </div>
+                        <div class="metric-label">총 수익률</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value {% if metrics.win_rate > 0.5 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(metrics.win_rate * 100) }}%
+                        </div>
+                        <div class="metric-label">승률</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value {% if metrics.profit_factor > 1 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(metrics.profit_factor) }}
+                        </div>
+                        <div class="metric-label">수익 팩터</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">
+                            {{ metrics.total_trades }}
+                        </div>
+                        <div class="metric-label">총 거래 수</div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- 거래 내역 -->
+        <div class="section">
+            <h2 class="section-title">거래 내역</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>시간</th>
+                        <th>심볼</th>
+                        <th>방향</th>
+                        <th>가격</th>
+                        <th>수량</th>
+                        <th>수익률</th>
+                        <th>수익</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in trades %}
+                    <tr>
+                        <td>{{ trade.timestamp }}</td>
+                        <td>{{ trade.symbol }}</td>
+                        <td>{{ trade.direction }}</td>
+                        <td>{{ "%.2f"|format(trade.price) }}</td>
+                        <td>{{ "%.4f"|format(trade.quantity) }}</td>
+                        <td class="{% if trade.pnl > 0 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(trade.pnl / trade.entry_price * 100) }}%
+                        </td>
+                        <td class="{% if trade.pnl > 0 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(trade.pnl) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        // 차트 데이터 로드
+        const charts = {{ charts|tojson|safe }};
+        
+        // 자본금 곡선 차트
+        Plotly.newPlot('equity_curve', JSON.parse(charts.equity_curve).data, JSON.parse(charts.equity_curve).layout);
+        
+        // 수익률 분포 차트
+        Plotly.newPlot('returns_distribution', JSON.parse(charts.returns_distribution).data, JSON.parse(charts.returns_distribution).layout);
+        
+        // 일별 수익률 차트
+        Plotly.newPlot('daily_returns', JSON.parse(charts.daily_returns).data, JSON.parse(charts.daily_returns).layout);
+        
+        // 낙폭 차트
+        Plotly.newPlot('drawdown', JSON.parse(charts.drawdown).data, JSON.parse(charts.drawdown).layout);
+    </script>
+</body>
+</html> 
