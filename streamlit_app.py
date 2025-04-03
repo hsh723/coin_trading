@@ -613,6 +613,28 @@ def login_form():
     
     st.info("기본 계정: 사용자 이름 - admin, 비밀번호 - password")
 
+def require_reauth():
+    """재인증이 필요한지 확인"""
+    # 재인증이 필요하지 않음을 나타내는 임시 구현
+    return False
+
+def reauth_form():
+    """재인증 폼 표시"""
+    st.warning("세션이 만료되었습니다. 다시 로그인해주세요.")
+    
+    with st.form("reauth_form"):
+        password = st.text_input("비밀번호 확인", type="password")
+        submit = st.form_submit_button("확인")
+        
+        if submit:
+            # 간단한 예시 - 실제로는 더 안전한 인증 로직이 필요함
+            if password == "password":
+                st.session_state.authenticated = True
+                st.success("인증되었습니다!")
+                st.rerun()
+            else:
+                st.error("비밀번호가 올바르지 않습니다.")
+
 def main():
     """메인 함수"""
     init_session_state()
