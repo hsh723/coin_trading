@@ -8,18 +8,63 @@ import pandas as pd
 from datetime import datetime, timedelta
 import yaml
 import os
+import sys
 import threading
 import time
 from pathlib import Path
 from dotenv import load_dotenv
-from src.utils.database import DatabaseManager
-from src.utils.auth import AuthManager
-from src.utils.logger import logger
-from src.trading_bot import TradingBot
-from src.exchange.binance import BinanceExchange
-from src.strategies.integrated import IntegratedStrategy
-from src.risk.manager import RiskManager
-from src.utils.telegram import TelegramNotifier
+
+# 프로젝트 루트 경로 추가
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 모듈 임포트
+try:
+    from src.utils.database import DatabaseManager
+    from src.utils.auth import AuthManager
+    from src.utils.logger import logger
+    from src.trading_bot import TradingBot
+    from src.exchange.binance import BinanceExchange
+    from src.strategies.integrated import IntegratedStrategy
+    from src.risk.manager import RiskManager
+    from src.utils.telegram import TelegramNotifier
+except ImportError as e:
+    st.error(f"모듈 임포트 오류: {str(e)}")
+    # 임시 대체 클래스 정의
+    class TradingBot:
+        def __init__(self, *args, **kwargs):
+            pass
+        def start(self):
+            pass
+        def stop(self):
+            pass
+    class BinanceExchange:
+        def __init__(self, *args, **kwargs):
+            pass
+        def fetch_ohlcv(self, *args, **kwargs):
+            return []
+        def fetch_positions(self):
+            return []
+        def fetch_my_trades(self, *args, **kwargs):
+            return []
+        def create_order(self, **kwargs):
+            pass
+    class IntegratedStrategy:
+        def __init__(self):
+            pass
+        def generate_signal(self, *args):
+            return None
+        def calculate_position_size(self, *args):
+            return 0
+    class RiskManager:
+        def __init__(self, *args, **kwargs):
+            self.risk_per_trade = 0.02
+        def get_capital(self):
+            return 1000.0
+    class TelegramNotifier:
+        def __init__(self, *args, **kwargs):
+            pass
+        def send_message(self, *args):
+            pass
 
 # 환경 변수 로드
 load_dotenv()
