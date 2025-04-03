@@ -2,15 +2,22 @@ from typing import Dict, Any, Optional
 from ..analysis.news_analyzer import NewsAnalyzer
 from ..analysis.technical_analyzer import TechnicalAnalyzer
 from ..utils.logger import setup_logger
+from ..utils.database import DatabaseManager
 
 class IntegratedStrategy:
     """통합 트레이딩 전략 클래스"""
     
-    def __init__(self):
-        """통합 전략 초기화"""
+    def __init__(self, db: DatabaseManager = None):
+        """
+        통합 전략 초기화
+        
+        Args:
+            db (DatabaseManager, optional): 데이터베이스 매니저 인스턴스
+        """
         self.logger = setup_logger('integrated_strategy')
-        self.news_analyzer = NewsAnalyzer()
-        self.technical_analyzer = TechnicalAnalyzer()
+        self.db = db if db else DatabaseManager()
+        self.news_analyzer = NewsAnalyzer(db=self.db)
+        self.technical_analyzer = TechnicalAnalyzer(db=self.db)
         
     def generate_signal(self, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """

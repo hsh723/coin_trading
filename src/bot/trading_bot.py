@@ -35,7 +35,7 @@ class TradingBot:
         
         self.news_analyzer = NewsAnalyzer(db=self.database)
         self.technical_analyzer = TechnicalAnalyzer(db=self.database)
-        self.strategy = IntegratedStrategy()
+        self.strategy = IntegratedStrategy(db=self.database)
         self.risk_manager = RiskManager(
             initial_capital=config.get('initial_capital', 10000.0)
         )
