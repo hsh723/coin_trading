@@ -19,7 +19,7 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 from ..utils.logger import setup_logger
 import requests
 from bs4 import BeautifulSoup
-from ..utils.database import Database
+from ..utils.database import DatabaseManager
 import feedparser
 
 logger = logging.getLogger(__name__)
@@ -31,12 +31,12 @@ nltk.download('punkt')
 class NewsAnalyzer:
     """뉴스 분석기 클래스"""
     
-    def __init__(self, db: Database):
+    def __init__(self, db: DatabaseManager):
         """
         뉴스 분석기 초기화
         
         Args:
-            db (Database): 데이터베이스 인스턴스
+            db (DatabaseManager): 데이터베이스 매니저 인스턴스
         """
         self.logger = setup_logger('news_analyzer')
         self.db = db
