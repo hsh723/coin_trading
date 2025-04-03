@@ -27,42 +27,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 모듈 임포트
-import sys
-import os
-import time
-import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import yaml
-import threading
-from pathlib import Path
-from dotenv import load_dotenv
-
-# 모듈 경로 문제 해결을 위한 임시 조치
-class TradingBot:
-    """임시 TradingBot 클래스"""
-    def __init__(self, *args, **kwargs):
-        self.running = False
-        self.status = "초기화"
-        
-    def start(self):
-        self.running = True
-        self.status = "실행 중"
-        return True
-        
-    def stop(self):
-        self.running = False
-        self.status = "중지됨"
-        return True
-    
-    def get_status(self):
-        return {
-            "running": self.running,
-            "status": self.status,
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-
 # 프로젝트 루트 경로 추가
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,53 +41,6 @@ try:
     from src.utils.telegram import TelegramNotifier
 except ImportError as e:
     st.error(f"모듈 임포트 오류: {str(e)}")
-    # 임시 대체 클래스 정의
-    class BinanceExchange:
-        """임시 BinanceExchange 클래스"""
-        def __init__(self, *args, **kwargs):
-            self.api_key = kwargs.get('api_key', '')
-            self.api_secret = kwargs.get('api_secret', '')
-            self.testnet = kwargs.get('testnet', True)
-            
-        def fetch_positions(self):
-            """포지션 정보 조회"""
-            return []  # 임시 구현
-            
-        def fetch_ohlcv(self, symbol, timeframe, limit):
-            """OHLCV 데이터 조회"""
-            return []  # 임시 구현
-            
-        def fetch_my_trades(self, symbol, limit):
-            """거래 내역 조회"""
-            return []  # 임시 구현
-            
-        def create_order(self, **kwargs):
-            """주문 생성"""
-            return True  # 임시 구현
-    class IntegratedStrategy:
-        def __init__(self):
-            pass
-        def generate_signal(self, *args):
-            return None
-        def calculate_position_size(self, *args):
-            return 0
-    class RiskManager:
-        def __init__(self, *args, **kwargs):
-            self.risk_per_trade = 0.02
-        def get_capital(self):
-            return 1000.0
-    # 임시 TelegramNotifier 클래스 재구현
-    class TelegramNotifier:
-        """임시 구현된 TelegramNotifier"""
-        def __init__(self, **kwargs):
-            # 어떤 인자든 받을 수 있도록 **kwargs 사용
-            self.config = kwargs
-            st.toast("텔레그램 알림 시스템 초기화됨", icon="📱")
-            
-        def send_message(self, message):
-            """메시지 전송 시뮬레이션"""
-            st.toast(f"텔레그램: {message[:30]}...", icon="📱")
-            return True
 
 # 환경 변수 로드
 load_dotenv()
@@ -213,6 +130,10 @@ if 'last_update' not in st.session_state:
     st.session_state.last_update = None
 if 'performance_report' not in st.session_state:
     st.session_state.performance_report = None
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = os.getenv('BINANCE_API_KEY', '')
+if 'api_secret' not in st.session_state:
+    st.session_state.api_secret = os.getenv('BINANCE_API_SECRET', '')
 
 # 데이터베이스 초기화
 db = Database()
@@ -231,6 +152,10 @@ def init_session_state():
         st.session_state.last_update = None
     if 'performance_report' not in st.session_state:
         st.session_state.performance_report = None
+    if 'api_key' not in st.session_state:
+        st.session_state.api_key = os.getenv('BINANCE_API_KEY', '')
+    if 'api_secret' not in st.session_state:
+        st.session_state.api_secret = os.getenv('BINANCE_API_SECRET', '')
 
 def add_log(message: str, level: str = "INFO"):
     """로그 추가"""
@@ -419,11 +344,65 @@ async def update_performance_report():
 
 async def start_bot(bot: TradingBot):
     """봇 시작"""
-    await bot.start()
+    try:
+        await bot.start()
+        return True
+    except Exception as e:
+        logger.error(f"봇 시작 실패: {str(e)}")
+        return False
 
 async def stop_bot(bot: TradingBot):
     """봇 중지"""
-    await bot.stop()
+    try:
+        await bot.stop()
+        return True
+    except Exception as e:
+        logger.error(f"봇 중지 실패: {str(e)}")
+        return False
+
+def save_api_keys(api_key: str, api_secret: str):
+    """API 키를 .env 파일에 저장"""
+    env_path = Path('.env')
+    
+    # 기존 .env 파일 내용 읽기
+    if env_path.exists():
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    else:
+        lines = []
+    
+    # 기존 키 값 찾기
+    key_found = False
+    secret_found = False
+    new_lines = []
+    
+    for line in lines:
+        if line.startswith('BINANCE_API_KEY='):
+            new_lines.append(f'BINANCE_API_KEY={api_key}\n')
+            key_found = True
+        elif line.startswith('BINANCE_API_SECRET='):
+            new_lines.append(f'BINANCE_API_SECRET={api_secret}\n')
+            secret_found = True
+        else:
+            new_lines.append(line)
+    
+    # 키가 없으면 추가
+    if not key_found:
+        new_lines.append(f'BINANCE_API_KEY={api_key}\n')
+    if not secret_found:
+        new_lines.append(f'BINANCE_API_SECRET={api_secret}\n')
+    
+    # 파일 저장
+    with open(env_path, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+    
+    # 환경 변수 업데이트
+    os.environ['BINANCE_API_KEY'] = api_key
+    os.environ['BINANCE_API_SECRET'] = api_secret
+    
+    # 세션 상태 업데이트
+    st.session_state.api_key = api_key
+    st.session_state.api_secret = api_secret
 
 def main():
     """메인 함수"""
@@ -434,8 +413,18 @@ def main():
         st.header("설정")
         
         # API 설정
-        api_key = st.text_input("API 키", type="password")
-        api_secret = st.text_input("API 시크릿", type="password")
+        api_key = st.text_input("API 키", 
+                               value=st.session_state.api_key,
+                               type="password")
+        api_secret = st.text_input("API 시크릿",
+                                  value=st.session_state.api_secret,
+                                  type="password")
+        
+        # API 키가 변경되었을 때만 저장
+        if (api_key != st.session_state.api_key or 
+            api_secret != st.session_state.api_secret) and api_key and api_secret:
+            save_api_keys(api_key, api_secret)
+            st.success("API 키가 저장되었습니다.")
         
         # 거래 설정
         symbol = st.selectbox(
@@ -470,23 +459,36 @@ def main():
                     st.session_state.bot = TradingBot(config)
                     
                     try:
-                        # 비동기 실행
-                        asyncio.run(start_bot(st.session_state.bot))
-                        st.success("트레이딩 봇이 시작되었습니다.")
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        success = loop.run_until_complete(start_bot(st.session_state.bot))
+                        if success:
+                            st.success("트레이딩 봇이 시작되었습니다.")
+                        else:
+                            st.error("봇 시작에 실패했습니다.")
+                            st.session_state.bot = None
                     except Exception as e:
                         st.error(f"봇 시작 중 오류 발생: {str(e)}")
                         st.session_state.bot = None
+                    finally:
+                        loop.close()
         
         with col2:
             if st.button("봇 중지"):
                 if st.session_state.bot:
                     try:
-                        # 비동기 실행
-                        asyncio.run(stop_bot(st.session_state.bot))
-                        st.session_state.bot = None
-                        st.success("트레이딩 봇이 중지되었습니다.")
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        success = loop.run_until_complete(stop_bot(st.session_state.bot))
+                        if success:
+                            st.session_state.bot = None
+                            st.success("트레이딩 봇이 중지되었습니다.")
+                        else:
+                            st.error("봇 중지에 실패했습니다.")
                     except Exception as e:
                         st.error(f"봇 중지 중 오류 발생: {str(e)}")
+                    finally:
+                        loop.close()
     
     # 메인 콘텐츠
     tab1, tab2, tab3, tab4 = st.tabs(["차트", "성과", "포지션", "거래 내역"])
