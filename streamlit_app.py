@@ -74,16 +74,27 @@ except ImportError as e:
     st.error(f"모듈 임포트 오류: {str(e)}")
     # 임시 대체 클래스 정의
     class BinanceExchange:
+        """임시 BinanceExchange 클래스"""
         def __init__(self, *args, **kwargs):
-            pass
-        def fetch_ohlcv(self, *args, **kwargs):
-            return []
+            self.api_key = kwargs.get('api_key', '')
+            self.api_secret = kwargs.get('api_secret', '')
+            self.testnet = kwargs.get('testnet', True)
+            
         def fetch_positions(self):
-            return []
-        def fetch_my_trades(self, *args, **kwargs):
-            return []
+            """포지션 정보 조회"""
+            return []  # 임시 구현
+            
+        def fetch_ohlcv(self, symbol, timeframe, limit):
+            """OHLCV 데이터 조회"""
+            return []  # 임시 구현
+            
+        def fetch_my_trades(self, symbol, limit):
+            """거래 내역 조회"""
+            return []  # 임시 구현
+            
         def create_order(self, **kwargs):
-            pass
+            """주문 생성"""
+            return True  # 임시 구현
     class IntegratedStrategy:
         def __init__(self):
             pass
@@ -214,6 +225,11 @@ def add_log(message: str, level: str = "INFO"):
     """로그 추가"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entry = f"[{timestamp}] {level}: {message}"
+    
+    # 세션 상태 초기화 확인
+    if "logs" not in st.session_state:
+        st.session_state.logs = []
+    
     st.session_state.logs.append(log_entry)
     
     # 로그 파일에도 기록
@@ -271,10 +287,8 @@ def update_positions(exchange):
     """포지션 정보 업데이트"""
     try:
         positions = exchange.fetch_positions()
-        if positions:
-            df = pd.DataFrame(positions)
-            st.session_state.positions = df
-            add_log("포지션 정보 업데이트 완료")
+        st.session_state.positions = positions
+        add_log("포지션 정보 업데이트 완료")
     except Exception as e:
         error_msg = f"포지션 업데이트 실패: {str(e)}"
         add_log(error_msg, "ERROR")
