@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import sqlite3
 import json
 import os
+from pathlib import Path
 
 from src.utils.config_loader import get_config
 
@@ -17,14 +18,20 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """데이터베이스 관리 클래스"""
     
-    def __init__(self, db_path: str = "trading.db"):
-        """
-        초기화
+    def __init__(self, db_path: Optional[str] = None):
+        """데이터베이스 관리자 초기화"""
+        if db_path is None:
+            # 프로젝트 루트 디렉토리에 data 폴더 생성
+            self.db_path = str(Path(__file__).parent.parent.parent / 'data' / 'trading.db')
+        else:
+            self.db_path = db_path
+            
+        # 데이터베이스 디렉토리가 없으면 생성
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         
-        Args:
-            db_path (str): 데이터베이스 파일 경로
-        """
-        self.db_path = db_path
+        # 데이터베이스 초기화
+        self._init_db()
+        
         self.logger = logging.getLogger(__name__)
         self.config = get_config()
         self.backup_dir = self.config['database']['backup_dir']
@@ -34,9 +41,6 @@ class DatabaseManager:
         # 데이터베이스 디렉토리 생성
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         os.makedirs(self.backup_dir, exist_ok=True)
-        
-        # 데이터베이스 초기화
-        self._init_db()
         
     def _init_db(self):
         """데이터베이스 초기화"""
