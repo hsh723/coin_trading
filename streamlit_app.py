@@ -596,7 +596,7 @@ def main():
                 stop_bot()
     
     # 메인 콘텐츠
-    tab1, tab2, tab3, tab4 = st.tabs(["차트", "성과", "포지션", "거래 내역"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["차트", "성과", "포지션", "거래 내역", "로그 및 알림"])
     
     with tab1:
         if st.session_state.market_data is not None:
@@ -787,6 +787,43 @@ def main():
         })
         st.dataframe(volatility, use_container_width=True)
 
+    # 로그 및 알림 탭
+    with tab6:
+        st.title("📝 로그 및 알림")
+        
+        # 필터 설정
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            log_type = st.selectbox("로그 유형", ["전체", "거래", "시스템", "알림"])
+        with col2:
+            date_range = st.date_input("날짜 범위", [datetime.now() - timedelta(days=7), datetime.now()])
+        with col3:
+            export_format = st.selectbox("내보내기 형식", ["CSV", "JSON"])
+        
+        # 로그 표시
+        st.subheader("📋 로그 목록")
+        
+        # 샘플 로그 데이터
+        logs = [
+            {"timestamp": "2024-01-01 10:00:00", "type": "거래", "message": "BTC/USDT 매수 신호 발생", "level": "INFO"},
+            {"timestamp": "2024-01-01 10:01:00", "type": "시스템", "message": "시장 데이터 업데이트 완료", "level": "INFO"},
+            {"timestamp": "2024-01-01 10:02:00", "type": "알림", "message": "텔레그램 알림 전송 완료", "level": "INFO"},
+            {"timestamp": "2024-01-01 10:03:00", "type": "거래", "message": "ETH/USDT 매도 신호 발생", "level": "INFO"},
+            {"timestamp": "2024-01-01 10:04:00", "type": "시스템", "message": "데이터베이스 백업 완료", "level": "INFO"}
+        ]
+        
+        # 로그 필터링
+        filtered_logs = logs
+        if log_type != "전체":
+            filtered_logs = [log for log in logs if log["type"] == log_type]
+        
+        # 로그 테이블 표시
+        log_df = pd.DataFrame(filtered_logs)
+        st.dataframe(log_df, use_container_width=True)
+        
+        # 내보내기 버튼
+        if st.button("로그 내보내기"):
+            if export_format == "CSV":
 if __name__ == "__main__":
     init_session_state()
     main() 
