@@ -33,23 +33,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 프로젝트 루트 경로 추가
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# 프로젝트 루트 경로를 시스템 경로에 추가
+sys.path.insert(0, str(Path(__file__).parent))
 
-# 모듈 임포트
-try:
-    from src.bot.trading_bot import TradingBot
-    from src.utils.logger import setup_logger
-    from src.analysis.performance_analyzer import PerformanceAnalyzer
-    from src.database.database import Database
-    from src.utils.database import DatabaseManager
-    from src.utils.auth import AuthManager
-    from src.exchange.binance_exchange import BinanceExchange
-    from src.strategy.integrated_strategy import IntegratedStrategy
-    from src.risk.risk_manager import RiskManager
-    from src.utils.telegram import TelegramNotifier
-except ImportError as e:
-    st.error(f"모듈 임포트 오류: {str(e)}")
+# 그 후 모듈 임포트
+from src.bot.trading_bot import TradingBot
+from src.exchange.binance_exchange import BinanceExchange
+from src.database.database_manager import DatabaseManager
+from src.utils.monitoring_dashboard import MonitoringDashboard
+from src.utils.performance_reporter import PerformanceReporter
+from src.utils.feedback_system import FeedbackSystem
 
 # 환경 변수 로드
 load_dotenv()
