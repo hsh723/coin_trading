@@ -18,6 +18,10 @@ import nest_asyncio
 from typing import Dict, Any, List, Optional
 import numpy as np
 from plotly.subplots import make_subplots
+from src.bot.trading_bot import TradingBot
+from src.utils.database import DatabaseManager
+from src.utils.logger import TradeLogger
+from src.analysis.technical_analyzer import TechnicalAnalyzer
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -143,6 +147,8 @@ def init_session_state():
         st.session_state.api_key = os.getenv('BINANCE_API_KEY', '')
     if 'api_secret' not in st.session_state:
         st.session_state.api_secret = os.getenv('BINANCE_API_SECRET', '')
+    if 'is_running' not in st.session_state:
+        st.session_state.is_running = False
 
 def add_log(message: str, level: str = "INFO"):
     """로그 추가"""
