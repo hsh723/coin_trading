@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from abc import ABC, abstractmethod
 import pandas as pd
 from src.exchange.binance_exchange import BinanceExchange
@@ -50,6 +50,13 @@ class TradingBot(ABC):
         self.current_position = None
         self._is_running = False
         self.last_update = None
+        self.timeframes = ['5m', '15m', '1h', '4h']  # 멀티 타임프레임
+        self.strategy_weights = {
+            '5m': 0.2,
+            '15m': 0.3,
+            '1h': 0.3,
+            '4h': 0.2
+        }
         
     @property
     def is_running(self) -> bool:
@@ -111,14 +118,11 @@ class TradingBot(ABC):
                     await self._update_positions()
                     
                     # 거래 신호 생성
-                    signal = await self.strategy.generate_signal(self.market_data)
+                    signal = await self._generate_signal()
                     
                     # 리스크 관리
-                    if signal:
-                        await self.risk_manager.evaluate_signal(signal)
-                    
-                    # 거래 실행
-                    if signal and self.risk_manager.should_execute(signal):
+                    if await self._check_risk_limits():
+                        # 거래 실행
                         await self._execute_trade(signal)
                     
                     # 성과 분석
@@ -145,28 +149,22 @@ class TradingBot(ABC):
     async def _update_market_data(self) -> None:
         """시장 데이터 업데이트"""
         try:
-            # OHLCV 데이터 조회
-            ohlcv = await self.exchange.fetch_ohlcv(
-                symbol=self.config['symbol'],
-                timeframe=self.config['timeframe'],
-                limit=100
-            )
-            
-            if not ohlcv:
-                self.logger.warning("OHLCV 데이터 조회 실패")
-                return
+            for timeframe in self.timeframes:
+                # 각 시간대별 데이터 조회
+                data = await self.database.get_market_data(timeframe)
                 
-            # DataFrame 변환
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
-            
+                if data is not None:
+                    # 기술적 지표 계산
+                    indicators = await self.strategy.calculate_indicators(data)
+                    
+                    # 데이터베이스에 저장
+                    await self.database.save_technical_indicators(timeframe, indicators)
+                    
             # 시장 데이터 업데이트
             self.market_data = {
-                'ohlcv': df,
-                'current_price': df['close'].iloc[-1],
-                'volatility': self.technical_analyzer.calculate_volatility(df),
-                'trend_strength': self.technical_analyzer.calculate_trend_strength(df)
+                'current_price': await self.exchange.fetch_current_price(self.config['symbol']),
+                'volatility': self.strategy.calculate_volatility(self.market_data['ohlcv']) if self.market_data else None,
+                'trend_strength': self.strategy.calculate_trend_strength(self.market_data['ohlcv']) if self.market_data else None
             }
             
             # 리스크 파라미터 조정
@@ -179,203 +177,208 @@ class TradingBot(ABC):
             self.logger.error(error_msg)
             self.database.save_log('ERROR', error_msg, 'trading_bot')
             
-    async def _manage_position(self, signal: Dict[str, Any]) -> None:
+    async def _update_positions(self) -> None:
+        """포지션 업데이트"""
+        try:
+            # 현재 포지션 조회
+            positions = await self.database.get_positions()
+            
+            for position in positions:
+                symbol = position['symbol']
+                self.current_position = position
+                
+        except Exception as e:
+            error_msg = f"포지션 업데이트 실패: {str(e)}"
+            self.logger.error(error_msg)
+            self.database.save_log('ERROR', error_msg, 'trading_bot')
+            
+    async def _generate_signal(self) -> Dict[str, Any]:
         """
-        포지션 관리
+        거래 신호 생성
+        
+        Returns:
+            Dict[str, Any]: 거래 신호
+        """
+        try:
+            signals = {}
+            total_score = 0
+            
+            for timeframe in self.timeframes:
+                # 각 시간대별 데이터 조회
+                data = await self.database.get_market_data(timeframe)
+                
+                if data is not None:
+                    # 기술적 지표 조회
+                    indicators = await self.database.get_technical_indicators(timeframe)
+                    
+                    if indicators:
+                        # 볼린저 밴드 + RSI 전략
+                        signal = self._bollinger_rsi_strategy(data, indicators)
+                        
+                        # 가중치 적용
+                        weighted_signal = signal * self.strategy_weights[timeframe]
+                        signals[timeframe] = weighted_signal
+                        total_score += weighted_signal
+                        
+            # 최종 신호 결정
+            if total_score >= 0.5:
+                return {'action': 'buy', 'score': total_score}
+            elif total_score <= -0.5:
+                return {'action': 'sell', 'score': total_score}
+            else:
+                return {'action': 'hold', 'score': total_score}
+                
+        except Exception as e:
+            self.logger.error(f"거래 신호 생성 실패: {str(e)}")
+            return {'action': 'hold', 'score': 0}
+            
+    def _bollinger_rsi_strategy(
+        self,
+        data: pd.DataFrame,
+        indicators: Dict[str, Any]
+    ) -> float:
+        """
+        볼린저 밴드 + RSI 전략
+        
+        Args:
+            data (pd.DataFrame): OHLCV 데이터
+            indicators (Dict[str, Any]): 기술적 지표
+            
+        Returns:
+            float: 거래 신호 (-1: 매도, 0: 홀딩, 1: 매수)
+        """
+        try:
+            # 현재 가격
+            current_price = data['close'].iloc[-1]
+            
+            # 볼린저 밴드
+            bb = indicators['bollinger']
+            upper_band = bb['upper'].iloc[-1]
+            lower_band = bb['lower'].iloc[-1]
+            
+            # RSI
+            rsi = indicators['rsi'].iloc[-1]
+            
+            # 매수 조건
+            if current_price <= lower_band and rsi < 30:
+                return 1.0
+                
+            # 매도 조건
+            elif current_price >= upper_band and rsi > 70:
+                return -1.0
+                
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"볼린저 밴드 + RSI 전략 실패: {str(e)}")
+            return 0.0
+            
+    async def _check_risk_limits(self) -> bool:
+        """
+        리스크 한도 확인
+        
+        Returns:
+            bool: 거래 가능 여부
+        """
+        try:
+            # 초기 자본 조회
+            initial_capital = await self.database.get_initial_capital()
+            
+            # 현재 자본 조회
+            current_capital = await self.database.get_current_capital()
+            
+            # 일일 손실 한도 확인
+            daily_loss_limit = initial_capital * 0.05  # 5%
+            daily_pnl = await self.database.get_daily_pnl()
+            
+            if daily_pnl <= -daily_loss_limit:
+                self.logger.warning("일일 손실 한도 도달")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"리스크 한도 확인 실패: {str(e)}")
+            return False
+            
+    async def _execute_trade(self, signal: Dict[str, Any]):
+        """
+        거래 실행
         
         Args:
             signal (Dict[str, Any]): 거래 신호
         """
         try:
-            current_price = self.market_data['current_price']
+            if signal['action'] == 'hold':
+                return
+                
+            # 포지션 크기 계산
+            position_size = await self._calculate_position_size()
             
-            # 포지션 없음
-            if not self.current_position:
-                if signal['signal'] == 'buy':
-                    # 진입 가격 계산
-                    entry_price = current_price
-                    
-                    # 손절가 계산
-                    stop_loss = self.strategy.calculate_stop_loss(
-                        entry_price,
-                        self.market_data['ohlcv']['atr'].iloc[-1]
-                    )
-                    
-                    # 포지션 크기 계산
-                    position_size = self.risk_manager.calculate_position_size(
-                        entry_price,
-                        stop_loss
-                    )
-                    
-                    # 주문 실행
-                    order = self.exchange.create_order(
-                        symbol=self.config['symbol'],
-                        type='market',
-                        side='buy',
-                        amount=position_size
-                    )
-                    
-                    if order:
-                        self.current_position = {
-                            'entry_price': entry_price,
-                            'stop_loss': stop_loss,
-                            'take_profit': self.strategy.calculate_take_profit(
-                                entry_price,
-                                stop_loss
-                            ),
-                            'size': position_size,
-                            'order_id': order['id']
-                        }
-                        
-                        # 거래 내역 저장
-                        self.database.save_trade({
-                            'symbol': self.config['symbol'],
-                            'side': 'buy',
-                            'price': entry_price,
-                            'amount': position_size,
-                            'order_id': order['id'],
-                            'status': 'open'
-                        })
-                        
-                        # 포지션 정보 저장
-                        self.database.save_position({
-                            'symbol': self.config['symbol'],
-                            'entry_price': entry_price,
-                            'amount': position_size,
-                            'stop_loss': stop_loss,
-                            'take_profit': self.current_position['take_profit'],
-                            'status': 'open'
-                        })
-                        
-                        self.logger.info(f"매수 포지션 진입: {self.current_position}")
-                        self.database.save_log('INFO', f"매수 포지션 진입: {self.current_position}", 'trading_bot')
-                        
-            # 포지션 있음
-            else:
-                # 매도 신호
-                if signal['signal'] == 'sell':
-                    # 주문 실행
-                    order = self.exchange.create_order(
-                        symbol=self.config['symbol'],
-                        type='market',
-                        side='sell',
-                        amount=self.current_position['size']
-                    )
-                    
-                    if order:
-                        # 손익 계산
-                        pnl = (current_price - self.current_position['entry_price']) * self.current_position['size']
-                        self.risk_manager.update_trade_result(pnl)
-                        
-                        # 거래 내역 업데이트
-                        self.database.save_trade({
-                            'symbol': self.config['symbol'],
-                            'side': 'sell',
-                            'price': current_price,
-                            'amount': self.current_position['size'],
-                            'order_id': order['id'],
-                            'pnl': pnl,
-                            'status': 'closed'
-                        })
-                        
-                        # 포지션 정보 업데이트
-                        self.database.update_position(
-                            self.current_position['id'],
-                            {
-                                'exit_time': datetime.now(),
-                                'exit_price': current_price,
-                                'pnl': pnl,
-                                'status': 'closed'
-                            }
-                        )
-                        
-                        self.logger.info(f"매도 포지션 청산: PNL={pnl:.2f}")
-                        self.database.save_log('INFO', f"매도 포지션 청산: PNL={pnl:.2f}", 'trading_bot')
-                        self.current_position = None
-                        
-                # 손절/이익 실현 체크
-                elif current_price <= self.current_position['stop_loss']:
-                    # 손절 주문 실행
-                    order = self.exchange.create_order(
-                        symbol=self.config['symbol'],
-                        type='market',
-                        side='sell',
-                        amount=self.current_position['size']
-                    )
-                    
-                    if order:
-                        pnl = (current_price - self.current_position['entry_price']) * self.current_position['size']
-                        self.risk_manager.update_trade_result(pnl)
-                        
-                        # 거래 내역 업데이트
-                        self.database.save_trade({
-                            'symbol': self.config['symbol'],
-                            'side': 'sell',
-                            'price': current_price,
-                            'amount': self.current_position['size'],
-                            'order_id': order['id'],
-                            'pnl': pnl,
-                            'status': 'closed'
-                        })
-                        
-                        # 포지션 정보 업데이트
-                        self.database.update_position(
-                            self.current_position['id'],
-                            {
-                                'exit_time': datetime.now(),
-                                'exit_price': current_price,
-                                'pnl': pnl,
-                                'status': 'closed'
-                            }
-                        )
-                        
-                        self.logger.info(f"손절 실행: PNL={pnl:.2f}")
-                        self.database.save_log('INFO', f"손절 실행: PNL={pnl:.2f}", 'trading_bot')
-                        self.current_position = None
-                        
-                elif current_price >= self.current_position['take_profit']:
-                    # 이익 실현 주문 실행
-                    order = self.exchange.create_order(
-                        symbol=self.config['symbol'],
-                        type='market',
-                        side='sell',
-                        amount=self.current_position['size']
-                    )
-                    
-                    if order:
-                        pnl = (current_price - self.current_position['entry_price']) * self.current_position['size']
-                        self.risk_manager.update_trade_result(pnl)
-                        
-                        # 거래 내역 업데이트
-                        self.database.save_trade({
-                            'symbol': self.config['symbol'],
-                            'side': 'sell',
-                            'price': current_price,
-                            'amount': self.current_position['size'],
-                            'order_id': order['id'],
-                            'pnl': pnl,
-                            'status': 'closed'
-                        })
-                        
-                        # 포지션 정보 업데이트
-                        self.database.update_position(
-                            self.current_position['id'],
-                            {
-                                'exit_time': datetime.now(),
-                                'exit_price': current_price,
-                                'pnl': pnl,
-                                'status': 'closed'
-                            }
-                        )
-                        
-                        self.logger.info(f"이익 실현: PNL={pnl:.2f}")
-                        self.database.save_log('INFO', f"이익 실현: PNL={pnl:.2f}", 'trading_bot')
-                        self.current_position = None
-                        
+            if position_size <= 0:
+                return
+                
+            # 거래 실행
+            trade = {
+                'timestamp': datetime.now(),
+                'action': signal['action'],
+                'size': position_size,
+                'price': await self.exchange.fetch_current_price(self.config['symbol']),
+                'score': signal['score']
+            }
+            
+            # 거래 기록 저장
+            await self.database.save_trade(trade)
+            
+            # 포지션 업데이트
+            await self._update_positions()
+            
         except Exception as e:
-            error_msg = f"포지션 관리 실패: {str(e)}"
-            self.logger.error(error_msg)
-            self.database.save_log('ERROR', error_msg, 'trading_bot')
+            self.logger.error(f"거래 실행 실패: {str(e)}")
+            
+    async def _calculate_position_size(self) -> float:
+        """
+        포지션 크기 계산
+        
+        Returns:
+            float: 포지션 크기
+        """
+        try:
+            # 초기 자본 조회
+            initial_capital = await self.database.get_initial_capital()
+            
+            # 포지션 크기 제한 (초기 자본의 5%)
+            max_position_size = initial_capital * 0.05
+            
+            return max_position_size
+            
+        except Exception as e:
+            self.logger.error(f"포지션 크기 계산 실패: {str(e)}")
+            return 0.0
+            
+    async def _update_performance(self):
+        """성과 업데이트"""
+        try:
+            # 현재 자본 조회
+            current_capital = await self.database.get_current_capital()
+            
+            # 초기 자본 조회
+            initial_capital = await self.database.get_initial_capital()
+            
+            # 수익률 계산
+            returns = (current_capital - initial_capital) / initial_capital
+            
+            # 성과 기록 저장
+            performance = {
+                'timestamp': datetime.now(),
+                'capital': current_capital,
+                'returns': returns
+            }
+            
+            await self.database.save_performance(performance)
+            
+        except Exception as e:
+            self.logger.error(f"성과 업데이트 실패: {str(e)}")
             
     def get_status(self) -> Dict[str, Any]:
         """
@@ -419,7 +422,7 @@ class TradingBot(ABC):
                 'current_price': self.market_data['current_price'],
                 'volatility': self.market_data['volatility'],
                 'trend_strength': self.market_data['trend_strength'],
-                'indicators': self.technical_analyzer.calculate_indicators(df)
+                'indicators': self.strategy.calculate_indicators(df)
             }
             
         except Exception as e:
