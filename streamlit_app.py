@@ -135,7 +135,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 로거 설정
-logger = setup_logger('streamlit_app')
+logger = get_logger()
 
 # 이벤트 루프 관리를 위한 유틸리티
 def get_or_create_eventloop():
