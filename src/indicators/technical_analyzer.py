@@ -8,6 +8,20 @@ import pandas as pd
 import numpy as np
 import talib
 from datetime import datetime, timedelta
+from functools import lru_cache
+import time
+
+class TechnicalAnalysisError(Exception):
+    """기술적 분석 관련 예외"""
+    pass
+
+class DataNotFoundError(TechnicalAnalysisError):
+    """데이터를 찾을 수 없는 경우"""
+    pass
+
+class CalculationError(TechnicalAnalysisError):
+    """계산 중 오류가 발생한 경우"""
+    pass
 
 class TechnicalAnalyzer:
     """기술적 분석 클래스"""
@@ -21,6 +35,35 @@ class TechnicalAnalyzer:
         """
         self.db_manager = db_manager
         self.logger = logging.getLogger(__name__)
+        self._cache = {}
+        self._cache_timeout = 300  # 5분
+        
+    def _check_cache(self, key: str) -> Optional[Dict]:
+        """
+        캐시 확인
+        
+        Args:
+            key (str): 캐시 키
+            
+        Returns:
+            Optional[Dict]: 캐시된 데이터
+        """
+        if key in self._cache:
+            data, timestamp = self._cache[key]
+            if time.time() - timestamp < self._cache_timeout:
+                return data
+            del self._cache[key]
+        return None
+        
+    def _update_cache(self, key: str, data: Dict):
+        """
+        캐시 업데이트
+        
+        Args:
+            key (str): 캐시 키
+            data (Dict): 캐시할 데이터
+        """
+        self._cache[key] = (data, time.time())
         
     def calculate_indicators(self,
                            symbol: str,
@@ -36,56 +79,79 @@ class TechnicalAnalyzer:
             
         Returns:
             Dict: 계산된 지표
+            
+        Raises:
+            DataNotFoundError: 가격 데이터를 찾을 수 없는 경우
+            CalculationError: 지표 계산 중 오류가 발생한 경우
         """
         try:
+            # 캐시 확인
+            cache_key = f"{symbol}_{timeframe}_{'_'.join(sorted(indicators))}"
+            cached_data = self._check_cache(cache_key)
+            if cached_data:
+                return cached_data
+                
             # 가격 데이터 조회
             price_data = self.db_manager.get_price_data(symbol, timeframe)
             
             if price_data.empty:
-                raise ValueError(f"{symbol}의 가격 데이터가 없습니다")
+                raise DataNotFoundError(f"{symbol}의 가격 데이터가 없습니다")
                 
             # 지표 계산
             results = {}
             
             for indicator in indicators:
-                if indicator == 'sma':
-                    results['sma_20'] = self._calculate_sma(price_data['close'], 20)
-                    results['sma_50'] = self._calculate_sma(price_data['close'], 50)
-                    results['sma_200'] = self._calculate_sma(price_data['close'], 200)
+                try:
+                    if indicator == 'sma':
+                        results['sma_20'] = self._calculate_sma(price_data['close'], 20)
+                        results['sma_50'] = self._calculate_sma(price_data['close'], 50)
+                        results['sma_200'] = self._calculate_sma(price_data['close'], 200)
+                        
+                    elif indicator == 'ema':
+                        results['ema_12'] = self._calculate_ema(price_data['close'], 12)
+                        results['ema_26'] = self._calculate_ema(price_data['close'], 26)
+                        
+                    elif indicator == 'macd':
+                        macd, signal, hist = self._calculate_macd(price_data['close'])
+                        results['macd'] = macd
+                        results['macd_signal'] = signal
+                        results['macd_hist'] = hist
+                        
+                    elif indicator == 'rsi':
+                        results['rsi'] = self._calculate_rsi(price_data['close'])
+                        
+                    elif indicator == 'bollinger':
+                        upper, middle, lower = self._calculate_bollinger_bands(price_data['close'])
+                        results['bb_upper'] = upper
+                        results['bb_middle'] = middle
+                        results['bb_lower'] = lower
+                        
+                    elif indicator == 'stochastic':
+                        k, d = self._calculate_stochastic(price_data['high'], price_data['low'], price_data['close'])
+                        results['stoch_k'] = k
+                        results['stoch_d'] = d
+                        
+                    elif indicator == 'volume':
+                        results['volume_sma'] = self._calculate_sma(price_data['volume'], 20)
+                        
+                except Exception as e:
+                    self.logger.error(f"{indicator} 계산 중 오류 발생: {str(e)}")
+                    raise CalculationError(f"{indicator} 계산 실패: {str(e)}")
                     
-                elif indicator == 'ema':
-                    results['ema_12'] = self._calculate_ema(price_data['close'], 12)
-                    results['ema_26'] = self._calculate_ema(price_data['close'], 26)
-                    
-                elif indicator == 'macd':
-                    macd, signal, hist = self._calculate_macd(price_data['close'])
-                    results['macd'] = macd
-                    results['macd_signal'] = signal
-                    results['macd_hist'] = hist
-                    
-                elif indicator == 'rsi':
-                    results['rsi'] = self._calculate_rsi(price_data['close'])
-                    
-                elif indicator == 'bollinger':
-                    upper, middle, lower = self._calculate_bollinger_bands(price_data['close'])
-                    results['bb_upper'] = upper
-                    results['bb_middle'] = middle
-                    results['bb_lower'] = lower
-                    
-                elif indicator == 'stochastic':
-                    k, d = self._calculate_stochastic(price_data['high'], price_data['low'], price_data['close'])
-                    results['stoch_k'] = k
-                    results['stoch_d'] = d
-                    
-                elif indicator == 'volume':
-                    results['volume_sma'] = self._calculate_sma(price_data['volume'], 20)
-                    
+            # 결과 캐시
+            self._update_cache(cache_key, results)
+            
             return results
             
+        except DataNotFoundError:
+            raise
+        except CalculationError:
+            raise
         except Exception as e:
             self.logger.error(f"기술적 지표 계산 실패: {str(e)}")
-            return {}
+            raise TechnicalAnalysisError(f"기술적 지표 계산 실패: {str(e)}")
             
+    @lru_cache(maxsize=100)
     def _calculate_sma(self, data: pd.Series, period: int) -> pd.Series:
         """
         단순 이동평균 계산
@@ -99,6 +165,7 @@ class TechnicalAnalyzer:
         """
         return talib.SMA(data, timeperiod=period)
         
+    @lru_cache(maxsize=100)
     def _calculate_ema(self, data: pd.Series, period: int) -> pd.Series:
         """
         지수 이동평균 계산
@@ -112,6 +179,7 @@ class TechnicalAnalyzer:
         """
         return talib.EMA(data, timeperiod=period)
         
+    @lru_cache(maxsize=100)
     def _calculate_macd(self, data: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """
         MACD 계산
@@ -125,6 +193,7 @@ class TechnicalAnalyzer:
         macd, signal, hist = talib.MACD(data)
         return macd, signal, hist
         
+    @lru_cache(maxsize=100)
     def _calculate_rsi(self, data: pd.Series, period: int = 14) -> pd.Series:
         """
         RSI 계산
@@ -138,6 +207,7 @@ class TechnicalAnalyzer:
         """
         return talib.RSI(data, timeperiod=period)
         
+    @lru_cache(maxsize=100)
     def _calculate_bollinger_bands(self,
                                  data: pd.Series,
                                  period: int = 20,
@@ -156,6 +226,7 @@ class TechnicalAnalyzer:
         upper, middle, lower = talib.BBANDS(data, timeperiod=period, nbdevup=std_dev, nbdevdn=std_dev)
         return upper, middle, lower
         
+    @lru_cache(maxsize=100)
     def _calculate_stochastic(self,
                             high: pd.Series,
                             low: pd.Series,
@@ -192,13 +263,23 @@ class TechnicalAnalyzer:
             
         Returns:
             Dict: 지지/저항선
+            
+        Raises:
+            DataNotFoundError: 가격 데이터를 찾을 수 없는 경우
+            CalculationError: 계산 중 오류가 발생한 경우
         """
         try:
+            # 캐시 확인
+            cache_key = f"sr_{symbol}_{timeframe}_{lookback}"
+            cached_data = self._check_cache(cache_key)
+            if cached_data:
+                return cached_data
+                
             # 가격 데이터 조회
             price_data = self.db_manager.get_price_data(symbol, timeframe)
             
             if price_data.empty:
-                raise ValueError(f"{symbol}의 가격 데이터가 없습니다")
+                raise DataNotFoundError(f"{symbol}의 가격 데이터가 없습니다")
                 
             # 최근 데이터만 사용
             recent_data = price_data.tail(lookback)
@@ -207,14 +288,21 @@ class TechnicalAnalyzer:
             support_levels = self._find_support_levels(recent_data)
             resistance_levels = self._find_resistance_levels(recent_data)
             
-            return {
+            result = {
                 'support': support_levels,
                 'resistance': resistance_levels
             }
             
+            # 결과 캐시
+            self._update_cache(cache_key, result)
+            
+            return result
+            
+        except DataNotFoundError:
+            raise
         except Exception as e:
             self.logger.error(f"지지/저항선 계산 실패: {str(e)}")
-            return {}
+            raise CalculationError(f"지지/저항선 계산 실패: {str(e)}")
             
     def _find_support_levels(self, data: pd.DataFrame, threshold: float = 0.02) -> List[float]:
         """
@@ -310,13 +398,23 @@ class TechnicalAnalyzer:
             
         Returns:
             Dict: 추세 분석 결과
+            
+        Raises:
+            DataNotFoundError: 가격 데이터를 찾을 수 없는 경우
+            CalculationError: 계산 중 오류가 발생한 경우
         """
         try:
+            # 캐시 확인
+            cache_key = f"trend_{symbol}_{timeframe}_{lookback}"
+            cached_data = self._check_cache(cache_key)
+            if cached_data:
+                return cached_data
+                
             # 가격 데이터 조회
             price_data = self.db_manager.get_price_data(symbol, timeframe)
             
             if price_data.empty:
-                raise ValueError(f"{symbol}의 가격 데이터가 없습니다")
+                raise DataNotFoundError(f"{symbol}의 가격 데이터가 없습니다")
                 
             # 최근 데이터만 사용
             recent_data = price_data.tail(lookback)
@@ -347,7 +445,7 @@ class TechnicalAnalyzer:
                 trend = 'downtrend'
                 strength = 0.5
                 
-            return {
+            result = {
                 'trend': trend,
                 'strength': strength,
                 'current_price': current_price,
@@ -355,6 +453,13 @@ class TechnicalAnalyzer:
                 'sma_50': current_sma_50
             }
             
+            # 결과 캐시
+            self._update_cache(cache_key, result)
+            
+            return result
+            
+        except DataNotFoundError:
+            raise
         except Exception as e:
             self.logger.error(f"추세 분석 실패: {str(e)}")
-            return {} 
+            raise CalculationError(f"추세 분석 실패: {str(e)}") 
