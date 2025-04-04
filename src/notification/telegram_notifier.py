@@ -1,63 +1,97 @@
 """
-텔레그램 알림 모듈
+텔레그램 알림 시스템
 """
 
-import aiohttp
+import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Optional, Dict, Any
+import telegram
 from datetime import datetime
-import json
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 class TelegramNotifier:
-    """텔레그램 알림 클래스"""
+    """텔레그램 알림 시스템 클래스"""
     
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(self):
+        """초기화"""
+        # 환경 변수 로드
+        load_dotenv()
+        
+        # 텔레그램 설정
+        self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        self.chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        self.bot = None if not self.bot_token else telegram.Bot(self.bot_token)
+        
+        # 알림 설정
+        self.enabled = False
+        self.notification_types = set()
+        self.min_interval = 5  # 기본 5분
+        self.last_notification = {}
+    
+    def setup(self, enabled: bool, notification_types: set, min_interval: int = 5):
         """
-        초기화
+        알림 설정
         
         Args:
-            bot_token (str): 텔레그램 봇 토큰
-            chat_id (str): 채팅 ID
+            enabled (bool): 알림 활성화 여부
+            notification_types (set): 알림 유형 목록
+            min_interval (int): 최소 알림 간격 (분)
         """
-        self.bot_token = bot_token
-        self.chat_id = chat_id
-        self.base_url = f"https://api.telegram.org/bot{bot_token}"
-        self.logger = logging.getLogger(__name__)
-        
-    async def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
+        self.enabled = enabled
+        self.notification_types = notification_types
+        self.min_interval = min_interval
+    
+    async def send_message(self, message: str, notification_type: str = None) -> bool:
         """
         메시지 전송
         
         Args:
-            text (str): 전송할 메시지
-            parse_mode (str): 메시지 형식
+            message (str): 전송할 메시지
+            notification_type (str): 알림 유형
             
         Returns:
             bool: 전송 성공 여부
         """
         try:
-            url = f"{self.base_url}/sendMessage"
-            data = {
-                "chat_id": self.chat_id,
-                "text": text,
-                "parse_mode": parse_mode
-            }
+            if not self.enabled or not self.bot:
+                return False
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=data) as response:
-                    if response.status == 200:
-                        return True
-                    else:
-                        self.logger.error(f"메시지 전송 실패: {response.status}")
-                        return False
-                        
+            # 알림 유형 확인
+            if notification_type and notification_type not in self.notification_types:
+                return False
+            
+            # 알림 간격 확인
+            now = datetime.now()
+            if notification_type in self.last_notification:
+                time_diff = (now - self.last_notification[notification_type]).total_seconds() / 60
+                if time_diff < self.min_interval:
+                    return False
+            
+            # 메시지 전송
+            await self.bot.send_message(
+                chat_id=self.chat_id,
+                text=message,
+                parse_mode='HTML'
+            )
+            
+            # 마지막 알림 시간 업데이트
+            if notification_type:
+                self.last_notification[notification_type] = now
+            
+            return True
+            
         except Exception as e:
-            self.logger.error(f"메시지 전송 중 오류 발생: {str(e)}")
+            logger.error(f"텔레그램 메시지 전송 실패: {str(e)}")
             return False
-            
+    
     async def send_trade_signal(self, signal: Dict[str, Any]) -> bool:
         """
-        거래 신호 알림 전송
+        거래 신호 알림
         
         Args:
             signal (Dict[str, Any]): 거래 신호 정보
@@ -66,25 +100,24 @@ class TelegramNotifier:
             bool: 전송 성공 여부
         """
         try:
-            text = (
+            message = (
                 f"🔔 <b>거래 신호</b>\n\n"
                 f"심볼: {signal['symbol']}\n"
-                f"방향: {signal['side']}\n"
-                f"가격: {signal['price']:.2f}\n"
-                f"강도: {signal['strength']}\n"
+                f"방향: {'매수 🟢' if signal['side'] == 'buy' else '매도 🔴'}\n"
+                f"가격: ${signal['price']:,.2f}\n"
                 f"시간: {signal['timestamp']}\n"
-                f"이유: {signal['reason']}"
+                f"신뢰도: {signal['confidence']:.1f}%"
             )
             
-            return await self.send_message(text)
+            return await self.send_message(message, 'trade_signal')
             
         except Exception as e:
-            self.logger.error(f"거래 신호 알림 전송 중 오류 발생: {str(e)}")
+            logger.error(f"거래 신호 알림 전송 실패: {str(e)}")
             return False
-            
+    
     async def send_position_update(self, position: Dict[str, Any]) -> bool:
         """
-        포지션 업데이트 알림 전송
+        포지션 업데이트 알림
         
         Args:
             position (Dict[str, Any]): 포지션 정보
@@ -93,95 +126,73 @@ class TelegramNotifier:
             bool: 전송 성공 여부
         """
         try:
-            text = (
+            message = (
                 f"📊 <b>포지션 업데이트</b>\n\n"
                 f"심볼: {position['symbol']}\n"
-                f"방향: {position['side']}\n"
-                f"크기: {position['size']:.4f}\n"
-                f"진입가: {position['entry_price']:.2f}\n"
-                f"현재가: {position['current_price']:.2f}\n"
-                f"손익: {position.get('pnl', 0):.2f}"
+                f"상태: {position['status']}\n"
+                f"수익률: {position['pnl_pct']:.2%}\n"
+                f"수익금: ${position['pnl']:,.2f}"
             )
             
-            return await self.send_message(text)
+            return await self.send_message(message, 'position_update')
             
         except Exception as e:
-            self.logger.error(f"포지션 업데이트 알림 전송 중 오류 발생: {str(e)}")
+            logger.error(f"포지션 업데이트 알림 전송 실패: {str(e)}")
             return False
-            
-    async def send_error_alert(self, error: Exception, context: str = '') -> bool:
+    
+    async def send_daily_report(self, report: Dict[str, Any]) -> bool:
         """
-        에러 알림 전송
+        일일 리포트 알림
         
         Args:
-            error (Exception): 에러 객체
-            context (str): 에러 컨텍스트
+            report (Dict[str, Any]): 일일 성과 리포트
             
         Returns:
             bool: 전송 성공 여부
         """
         try:
-            text = (
+            message = (
+                f"📈 <b>일일 거래 리포트</b>\n\n"
+                f"날짜: {report['date']}\n"
+                f"총 거래: {report['total_trades']}건\n"
+                f"승률: {report['win_rate']:.1f}%\n"
+                f"수익률: {report['return_pct']:.2%}\n"
+                f"수익금: ${report['pnl']:,.2f}\n\n"
+                f"상세 내역:\n"
+                f"- 승리: {report['winning_trades']}건\n"
+                f"- 패배: {report['losing_trades']}건\n"
+                f"- 최대 수익: ${report['max_profit']:,.2f}\n"
+                f"- 최대 손실: ${report['max_loss']:,.2f}"
+            )
+            
+            return await self.send_message(message, 'daily_report')
+            
+        except Exception as e:
+            logger.error(f"일일 리포트 알림 전송 실패: {str(e)}")
+            return False
+    
+    async def send_error(self, error: str) -> bool:
+        """
+        에러 알림
+        
+        Args:
+            error (str): 에러 메시지
+            
+        Returns:
+            bool: 전송 성공 여부
+        """
+        try:
+            message = (
                 f"⚠️ <b>에러 발생</b>\n\n"
-                f"컨텍스트: {context}\n"
-                f"에러: {str(error)}\n"
-                f"시간: {datetime.now()}"
+                f"시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"내용: {error}"
             )
             
-            return await self.send_message(text)
+            return await self.send_message(message, 'error')
             
         except Exception as e:
-            self.logger.error(f"에러 알림 전송 중 오류 발생: {str(e)}")
+            logger.error(f"에러 알림 전송 실패: {str(e)}")
             return False
-            
-    async def send_performance_report(self, report: Dict[str, Any]) -> bool:
-        """
-        성과 리포트 알림 전송
-        
-        Args:
-            report (Dict[str, Any]): 성과 리포트 정보
-            
-        Returns:
-            bool: 전송 성공 여부
-        """
-        try:
-            text = (
-                f"📈 <b>성과 리포트</b>\n\n"
-                f"기간: {report['period']}\n"
-                f"총 거래: {report['total_trades']}\n"
-                f"승률: {report['win_rate']:.2%}\n"
-                f"수익률: {report['returns']:.2%}\n"
-                f"샤프 비율: {report['sharpe_ratio']:.2f}"
-            )
-            
-            return await self.send_message(text)
-            
-        except Exception as e:
-            self.logger.error(f"성과 리포트 알림 전송 중 오류 발생: {str(e)}")
-            return False
-            
-    async def send_news_alert(self, news: Dict[str, Any]) -> bool:
-        """
-        뉴스 알림 전송
-        
-        Args:
-            news (Dict[str, Any]): 뉴스 정보
-            
-        Returns:
-            bool: 전송 성공 여부
-        """
-        try:
-            text = (
-                f"📰 <b>중요 뉴스</b>\n\n"
-                f"제목: {news['title']}\n"
-                f"소스: {news['source']}\n"
-                f"감성: {news['sentiment_label']}\n"
-                f"영향도: {news['impact_label']}\n"
-                f"시간: {news['timestamp']}"
-            )
-            
-            return await self.send_message(text)
-            
-        except Exception as e:
-            self.logger.error(f"뉴스 알림 전송 중 오류 발생: {str(e)}")
-            return False 
+
+# 전역 인스턴스 생성
+telegram_notifier = TelegramNotifier() 
