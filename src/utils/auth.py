@@ -3,104 +3,157 @@
 """
 
 import os
-import jwt
+import json
+import logging
 import hashlib
-import time
+import secrets
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
-from .config import config_manager
-from .logger import logger
-from .database import DatabaseManager
+from typing import Dict, Optional
+import jwt
+from pathlib import Path
 
 class AuthManager:
-    def __init__(self):
-        """인증 관리자 초기화"""
-        self.db = DatabaseManager()
-        self.jwt_secret = config_manager.get_config('JWT_SECRET', os.urandom(32).hex())
-        self.jwt_expiry = 3600  # 1시간
-        self.reauth_timeout = 300  # 5분
-        self._setup_admin_user()
+    """인증 관리자 클래스"""
     
-    def _setup_admin_user(self):
-        """관리자 사용자 설정"""
-        try:
-            # 기본 관리자 계정이 없으면 생성
-            if not self.db.get_user('admin'):
-                self.create_user(
-                    username='admin',
-                    password='admin123',  # 초기 비밀번호
-                    role='admin'
-                )
-                logger.warning("기본 관리자 계정이 생성되었습니다. 비밀번호를 변경하세요.")
-        except Exception as e:
-            logger.error(f"관리자 계정 설정 실패: {str(e)}")
-    
-    def create_user(self, username: str, password: str, role: str = 'user') -> bool:
+    def __init__(self, 
+                secret_key: str,
+                token_expiry: int = 3600,
+                users_file: str = "users.json"):
         """
-        사용자 생성
+        초기화
         
         Args:
-            username (str): 사용자 이름
+            secret_key (str): JWT 토큰 생성용 비밀 키
+            token_expiry (int): 토큰 만료 시간 (초)
+            users_file (str): 사용자 정보 파일 경로
+        """
+        self.secret_key = secret_key
+        self.token_expiry = token_expiry
+        self.users_file = users_file
+        self.logger = logging.getLogger(__name__)
+        self._init_users_file()
+        
+    def _init_users_file(self):
+        """사용자 정보 파일 초기화"""
+        try:
+            if not os.path.exists(self.users_file):
+                with open(self.users_file, 'w') as f:
+                    json.dump({}, f)
+        except Exception as e:
+            self.logger.error(f"사용자 정보 파일 초기화 실패: {str(e)}")
+            raise
+            
+    def _load_users(self) -> Dict:
+        """사용자 정보 로드"""
+        try:
+            with open(self.users_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.error(f"사용자 정보 로드 실패: {str(e)}")
+            return {}
+            
+    def _save_users(self, users: Dict):
+        """사용자 정보 저장"""
+        try:
+            with open(self.users_file, 'w') as f:
+                json.dump(users, f, indent=4)
+        except Exception as e:
+            self.logger.error(f"사용자 정보 저장 실패: {str(e)}")
+            raise
+            
+    def _hash_password(self, password: str) -> str:
+        """비밀번호 해시 생성"""
+        salt = secrets.token_hex(16)
+        return f"{salt}:{hashlib.sha256((password + salt).encode()).hexdigest()}"
+        
+    def _verify_password(self, password: str, hashed_password: str) -> bool:
+        """비밀번호 검증"""
+        try:
+            salt, stored_hash = hashed_password.split(':')
+            return hashlib.sha256((password + salt).encode()).hexdigest() == stored_hash
+        except:
+            return False
+            
+    def register_user(self, 
+                     username: str,
+                     password: str,
+                     email: str,
+                     settings: Optional[Dict] = None) -> bool:
+        """
+        사용자 등록
+        
+        Args:
+            username (str): 사용자명
             password (str): 비밀번호
-            role (str): 역할 (admin/user)
+            email (str): 이메일
+            settings (Optional[Dict]): 사용자 설정
             
         Returns:
-            bool: 생성 성공 여부
+            bool: 등록 성공 여부
         """
         try:
-            # 비밀번호 해시화
-            hashed_password = self._hash_password(password)
+            users = self._load_users()
             
-            # 사용자 정보 저장
-            user_data = {
-                'username': username,
-                'password': hashed_password,
-                'role': role,
-                'created_at': datetime.now(),
+            if username in users:
+                self.logger.warning(f"이미 존재하는 사용자명: {username}")
+                return False
+                
+            users[username] = {
+                'password': self._hash_password(password),
+                'email': email,
+                'settings': settings or {},
+                'created_at': datetime.now().isoformat(),
                 'last_login': None
             }
             
-            return self.db.save_user(user_data)
+            self._save_users(users)
+            self.logger.info(f"사용자 등록 완료: {username}")
+            return True
             
         except Exception as e:
-            logger.error(f"사용자 생성 실패: {str(e)}")
+            self.logger.error(f"사용자 등록 실패: {str(e)}")
             return False
-    
-    def authenticate(self, username: str, password: str) -> Optional[str]:
+            
+    def authenticate_user(self, username: str, password: str) -> Optional[str]:
         """
         사용자 인증
         
         Args:
-            username (str): 사용자 이름
+            username (str): 사용자명
             password (str): 비밀번호
             
         Returns:
             Optional[str]: JWT 토큰 또는 None
         """
         try:
-            # 사용자 조회
-            user = self.db.get_user(username)
-            if not user:
-                logger.warning(f"사용자를 찾을 수 없음: {username}")
-                return None
+            users = self._load_users()
             
-            # 비밀번호 확인
-            if not self._verify_password(password, user['password']):
-                logger.warning(f"잘못된 비밀번호: {username}")
+            if username not in users:
+                self.logger.warning(f"존재하지 않는 사용자명: {username}")
                 return None
-            
+                
+            if not self._verify_password(password, users[username]['password']):
+                self.logger.warning(f"비밀번호 불일치: {username}")
+                return None
+                
             # 마지막 로그인 시간 업데이트
-            self.db.update_user_last_login(username)
+            users[username]['last_login'] = datetime.now().isoformat()
+            self._save_users(users)
             
             # JWT 토큰 생성
-            token = self._generate_token(user)
+            token = jwt.encode({
+                'username': username,
+                'exp': datetime.utcnow() + timedelta(seconds=self.token_expiry)
+            }, self.secret_key, algorithm='HS256')
+            
+            self.logger.info(f"사용자 인증 완료: {username}")
             return token
             
         except Exception as e:
-            logger.error(f"인증 실패: {str(e)}")
+            self.logger.error(f"사용자 인증 실패: {str(e)}")
             return None
-    
-    def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
+            
+    def verify_token(self, token: str) -> Optional[Dict]:
         """
         토큰 검증
         
@@ -108,83 +161,103 @@ class AuthManager:
             token (str): JWT 토큰
             
         Returns:
-            Optional[Dict[str, Any]]: 사용자 정보 또는 None
+            Optional[Dict]: 토큰 페이로드 또는 None
         """
         try:
-            payload = jwt.decode(
-                token,
-                self.jwt_secret,
-                algorithms=['HS256']
-            )
+            payload = jwt.decode(token, self.secret_key, algorithms=['HS256'])
             return payload
         except jwt.ExpiredSignatureError:
-            logger.warning("만료된 토큰")
+            self.logger.warning("만료된 토큰")
             return None
         except jwt.InvalidTokenError:
-            logger.warning("잘못된 토큰")
+            self.logger.warning("유효하지 않은 토큰")
             return None
-        except Exception as e:
-            logger.error(f"토큰 검증 실패: {str(e)}")
-            return None
-    
-    def require_reauth(self, token: str) -> bool:
+            
+    def update_user_settings(self, 
+                           username: str,
+                           settings: Dict) -> bool:
         """
-        재인증 필요 여부 확인
+        사용자 설정 업데이트
         
         Args:
-            token (str): JWT 토큰
+            username (str): 사용자명
+            settings (Dict): 새로운 설정
             
         Returns:
-            bool: 재인증 필요 여부
+            bool: 업데이트 성공 여부
         """
         try:
-            payload = self.verify_token(token)
-            if not payload:
-                return True
+            users = self._load_users()
             
-            # 마지막 인증 시간 확인
-            last_auth = payload.get('last_auth', 0)
-            current_time = time.time()
+            if username not in users:
+                self.logger.warning(f"존재하지 않는 사용자명: {username}")
+                return False
+                
+            users[username]['settings'].update(settings)
+            self._save_users(users)
             
-            return (current_time - last_auth) > self.reauth_timeout
+            self.logger.info(f"사용자 설정 업데이트 완료: {username}")
+            return True
             
         except Exception as e:
-            logger.error(f"재인증 확인 실패: {str(e)}")
+            self.logger.error(f"사용자 설정 업데이트 실패: {str(e)}")
+            return False
+            
+    def get_user_settings(self, username: str) -> Optional[Dict]:
+        """
+        사용자 설정 조회
+        
+        Args:
+            username (str): 사용자명
+            
+        Returns:
+            Optional[Dict]: 사용자 설정 또는 None
+        """
+        try:
+            users = self._load_users()
+            
+            if username not in users:
+                self.logger.warning(f"존재하지 않는 사용자명: {username}")
+                return None
+                
+            return users[username]['settings']
+            
+        except Exception as e:
+            self.logger.error(f"사용자 설정 조회 실패: {str(e)}")
+            return None
+            
+    def change_password(self, 
+                       username: str,
+                       old_password: str,
+                       new_password: str) -> bool:
+        """
+        비밀번호 변경
+        
+        Args:
+            username (str): 사용자명
+            old_password (str): 현재 비밀번호
+            new_password (str): 새로운 비밀번호
+            
+        Returns:
+            bool: 변경 성공 여부
+        """
+        try:
+            users = self._load_users()
+            
+            if username not in users:
+                self.logger.warning(f"존재하지 않는 사용자명: {username}")
+                return False
+                
+            if not self._verify_password(old_password, users[username]['password']):
+                self.logger.warning(f"현재 비밀번호 불일치: {username}")
+                return False
+                
+            users[username]['password'] = self._hash_password(new_password)
+            self._save_users(users)
+            
+            self.logger.info(f"비밀번호 변경 완료: {username}")
             return True
-    
-    def _hash_password(self, password: str) -> str:
-        """비밀번호 해시화"""
-        salt = os.urandom(32)
-        key = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            salt,
-            100000
-        )
-        return salt.hex() + key.hex()
-    
-    def _verify_password(self, password: str, hashed: str) -> bool:
-        """비밀번호 검증"""
-        salt = bytes.fromhex(hashed[:64])
-        key = bytes.fromhex(hashed[64:])
-        new_key = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            salt,
-            100000
-        )
-        return key == new_key
-    
-    def _generate_token(self, user: Dict[str, Any]) -> str:
-        """JWT 토큰 생성"""
-        payload = {
-            'username': user['username'],
-            'role': user['role'],
-            'exp': datetime.utcnow() + timedelta(seconds=self.jwt_expiry),
-            'iat': datetime.utcnow(),
-            'last_auth': time.time()
-        }
-        return jwt.encode(payload, self.jwt_secret, algorithm='HS256')
-
-# 전역 인증 관리자 인스턴스
-auth_manager = AuthManager() 
+            
+        except Exception as e:
+            self.logger.error(f"비밀번호 변경 실패: {str(e)}")
+            return False 

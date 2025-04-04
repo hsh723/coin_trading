@@ -1,17 +1,19 @@
 """
-데이터 백업 모듈
+백업 및 복구 모듈
 """
 
 import os
 import shutil
-import json
-import hashlib
-import schedule
-import time
+import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
+import json
+import zipfile
 from pathlib import Path
 import boto3
+import schedule
+import time
+import hashlib
 from google.cloud import storage
 from azure.storage.blob import BlobServiceClient
 from ..utils.logger import setup_logger
@@ -407,188 +409,175 @@ class BackupSystem:
         )
 
 class BackupManager:
-    def __init__(self, backup_dir='data/backups'):
-        """백업 관리자 초기화"""
+    """백업 관리자 클래스"""
+    
+    def __init__(self, backup_dir: str = "backups"):
+        """
+        초기화
+        
+        Args:
+            backup_dir (str): 백업 디렉토리 경로
+        """
         self.backup_dir = Path(backup_dir)
-        self.backup_dir.mkdir(parents=True, exist_ok=True)
-    
-    def create_backup(self, source_path, backup_type='local'):
-        """백업 생성"""
+        self.logger = logging.getLogger(__name__)
+        self._init_backup_dir()
+        
+    def _init_backup_dir(self):
+        """백업 디렉토리 초기화"""
         try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            os.makedirs(self.backup_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.error(f"백업 디렉토리 생성 실패: {str(e)}")
+            raise
+            
+    def create_backup(self, 
+                     db_path: str,
+                     config_path: str,
+                     description: Optional[str] = None) -> str:
+        """
+        백업 생성
+        
+        Args:
+            db_path (str): 데이터베이스 파일 경로
+            config_path (str): 설정 파일 경로
+            description (Optional[str]): 백업 설명
+            
+        Returns:
+            str: 백업 파일 경로
+        """
+        try:
+            # 백업 파일명 생성
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_name = f"backup_{timestamp}"
+            if description:
+                backup_name += f"_{description.replace(' ', '_')}"
+            backup_path = os.path.join(self.backup_dir, f"{backup_name}.zip")
             
-            if backup_type == 'local':
-                return self._create_local_backup(source_path, backup_name)
-            elif backup_type == 's3':
-                return self._create_s3_backup(source_path, backup_name)
-            elif backup_type == 'gdrive':
-                return self._create_gdrive_backup(source_path, backup_name)
-            else:
-                raise ValueError(f"지원하지 않는 백업 타입: {backup_type}")
-        except Exception as e:
-            logger.error(f"백업 생성 실패: {str(e)}")
-            return None
-    
-    def _create_local_backup(self, source_path, backup_name):
-        """로컬 백업 생성"""
-        try:
-            backup_path = self.backup_dir / f"{backup_name}.zip"
-            shutil.make_archive(
-                str(backup_path.with_suffix('')),
-                'zip',
-                os.path.dirname(source_path),
-                os.path.basename(source_path)
-            )
-            logger.info(f"로컬 백업 생성 완료: {backup_path}")
+            # 백업 파일 생성
+            with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # 데이터베이스 파일 백업
+                if os.path.exists(db_path):
+                    zipf.write(db_path, os.path.basename(db_path))
+                
+                # 설정 파일 백업
+                if os.path.exists(config_path):
+                    zipf.write(config_path, os.path.basename(config_path))
+                
+                # 메타데이터 추가
+                metadata = {
+                    'timestamp': timestamp,
+                    'description': description,
+                    'files': [
+                        os.path.basename(db_path),
+                        os.path.basename(config_path)
+                    ]
+                }
+                zipf.writestr('metadata.json', json.dumps(metadata))
+            
+            self.logger.info(f"백업 생성 완료: {backup_path}")
             return backup_path
+            
         except Exception as e:
-            logger.error(f"로컬 백업 생성 실패: {str(e)}")
-            return None
-    
-    def _create_s3_backup(self, source_path, backup_name):
-        """S3 백업 생성"""
+            self.logger.error(f"백업 생성 실패: {str(e)}")
+            raise
+            
+    def restore_backup(self, backup_path: str, restore_dir: str) -> bool:
+        """
+        백업 복구
+        
+        Args:
+            backup_path (str): 백업 파일 경로
+            restore_dir (str): 복구할 디렉토리
+            
+        Returns:
+            bool: 복구 성공 여부
+        """
         try:
-            s3 = boto3.client('s3')
-            bucket_name = os.getenv('AWS_S3_BUCKET')
+            # 복구 디렉토리 생성
+            os.makedirs(restore_dir, exist_ok=True)
             
-            if not bucket_name:
-                raise ValueError("AWS_S3_BUCKET 환경 변수가 설정되지 않았습니다.")
+            # 백업 파일 압축 해제
+            with zipfile.ZipFile(backup_path, 'r') as zipf:
+                # 메타데이터 확인
+                metadata = json.loads(zipf.read('metadata.json'))
+                
+                # 파일 복구
+                for file in metadata['files']:
+                    zipf.extract(file, restore_dir)
             
-            backup_path = self.backup_dir / f"{backup_name}.zip"
-            self._create_local_backup(source_path, backup_name)
+            self.logger.info(f"백업 복구 완료: {backup_path}")
+            return True
             
-            s3.upload_file(
-                str(backup_path),
-                bucket_name,
-                f"backups/{backup_name}.zip"
-            )
-            
-            # 로컬 백업 파일 삭제
-            backup_path.unlink()
-            
-            logger.info(f"S3 백업 생성 완료: s3://{bucket_name}/backups/{backup_name}.zip")
-            return f"s3://{bucket_name}/backups/{backup_name}.zip"
         except Exception as e:
-            logger.error(f"S3 백업 생성 실패: {str(e)}")
-            return None
-    
-    def _create_gdrive_backup(self, source_path, backup_name):
-        """Google Drive 백업 생성"""
+            self.logger.error(f"백업 복구 실패: {str(e)}")
+            return False
+            
+    def list_backups(self) -> list:
+        """
+        백업 목록 조회
+        
+        Returns:
+            list: 백업 목록
+        """
         try:
-            creds = service_account.Credentials.from_service_account_file(
-                'credentials.json',
-                scopes=['https://www.googleapis.com/auth/drive.file']
-            )
+            backups = []
+            for file in os.listdir(self.backup_dir):
+                if file.endswith('.zip'):
+                    backup_path = os.path.join(self.backup_dir, file)
+                    with zipfile.ZipFile(backup_path, 'r') as zipf:
+                        metadata = json.loads(zipf.read('metadata.json'))
+                        backups.append({
+                            'name': file,
+                            'path': backup_path,
+                            'timestamp': metadata['timestamp'],
+                            'description': metadata['description']
+                        })
             
-            drive_service = build('drive', 'v3', credentials=creds)
-            backup_path = self.backup_dir / f"{backup_name}.zip"
+            return sorted(backups, key=lambda x: x['timestamp'], reverse=True)
             
-            self._create_local_backup(source_path, backup_name)
-            
-            file_metadata = {
-                'name': f"{backup_name}.zip",
-                'parents': [os.getenv('GDRIVE_FOLDER_ID')]
-            }
-            
-            media = MediaFileUpload(
-                str(backup_path),
-                mimetype='application/zip',
-                resumable=True
-            )
-            
-            file = drive_service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
-            
-            # 로컬 백업 파일 삭제
-            backup_path.unlink()
-            
-            logger.info(f"Google Drive 백업 생성 완료: {file.get('id')}")
-            return file.get('id')
         except Exception as e:
-            logger.error(f"Google Drive 백업 생성 실패: {str(e)}")
-            return None
-    
-    def cleanup_old_backups(self, max_backups=10, backup_type='local'):
-        """오래된 백업 정리"""
+            self.logger.error(f"백업 목록 조회 실패: {str(e)}")
+            return []
+            
+    def delete_backup(self, backup_path: str) -> bool:
+        """
+        백업 삭제
+        
+        Args:
+            backup_path (str): 백업 파일 경로
+            
+        Returns:
+            bool: 삭제 성공 여부
+        """
         try:
-            if backup_type == 'local':
-                self._cleanup_local_backups(max_backups)
-            elif backup_type == 's3':
-                self._cleanup_s3_backups(max_backups)
-            elif backup_type == 'gdrive':
-                self._cleanup_gdrive_backups(max_backups)
-            else:
-                raise ValueError(f"지원하지 않는 백업 타입: {backup_type}")
-        except Exception as e:
-            logger.error(f"백업 정리 실패: {str(e)}")
-    
-    def _cleanup_local_backups(self, max_backups):
-        """로컬 백업 정리"""
-        backup_files = sorted(
-            self.backup_dir.glob('*.zip'),
-            key=lambda x: x.stat().st_mtime,
-            reverse=True
-        )
-        
-        for backup_file in backup_files[max_backups:]:
-            backup_file.unlink()
-            logger.info(f"오래된 로컬 백업 삭제: {backup_file}")
-    
-    def _cleanup_s3_backups(self, max_backups):
-        """S3 백업 정리"""
-        s3 = boto3.client('s3')
-        bucket_name = os.getenv('AWS_S3_BUCKET')
-        
-        if not bucket_name:
-            raise ValueError("AWS_S3_BUCKET 환경 변수가 설정되지 않았습니다.")
-        
-        response = s3.list_objects_v2(
-            Bucket=bucket_name,
-            Prefix='backups/'
-        )
-        
-        if 'Contents' in response:
-            backup_files = sorted(
-                response['Contents'],
-                key=lambda x: x['LastModified'],
-                reverse=True
-            )
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+                self.logger.info(f"백업 삭제 완료: {backup_path}")
+                return True
+            return False
             
-            for backup_file in backup_files[max_backups:]:
-                s3.delete_object(
-                    Bucket=bucket_name,
-                    Key=backup_file['Key']
-                )
-                logger.info(f"오래된 S3 백업 삭제: {backup_file['Key']}")
-    
-    def _cleanup_gdrive_backups(self, max_backups):
-        """Google Drive 백업 정리"""
-        creds = service_account.Credentials.from_service_account_file(
-            'credentials.json',
-            scopes=['https://www.googleapis.com/auth/drive.file']
-        )
+        except Exception as e:
+            self.logger.error(f"백업 삭제 실패: {str(e)}")
+            return False
+            
+    def cleanup_old_backups(self, max_backups: int = 10) -> bool:
+        """
+        오래된 백업 정리
         
-        drive_service = build('drive', 'v3', credentials=creds)
-        folder_id = os.getenv('GDRIVE_FOLDER_ID')
-        
-        if not folder_id:
-            raise ValueError("GDRIVE_FOLDER_ID 환경 변수가 설정되지 않았습니다.")
-        
-        results = drive_service.files().list(
-            q=f"'{folder_id}' in parents",
-            fields="files(id, name, createdTime)"
-        ).execute()
-        
-        backup_files = sorted(
-            results.get('files', []),
-            key=lambda x: x['createdTime'],
-            reverse=True
-        )
-        
-        for backup_file in backup_files[max_backups:]:
-            drive_service.files().delete(fileId=backup_file['id']).execute()
-            logger.info(f"오래된 Google Drive 백업 삭제: {backup_file['name']}") 
+        Args:
+            max_backups (int): 유지할 최대 백업 수
+            
+        Returns:
+            bool: 정리 성공 여부
+        """
+        try:
+            backups = self.list_backups()
+            if len(backups) > max_backups:
+                for backup in backups[max_backups:]:
+                    self.delete_backup(backup['path'])
+                self.logger.info(f"오래된 백업 {len(backups) - max_backups}개 정리 완료")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"백업 정리 실패: {str(e)}")
+            return False 
