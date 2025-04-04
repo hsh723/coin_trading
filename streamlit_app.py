@@ -656,6 +656,12 @@ def main():
                 ])
                 fig.update_layout(template='plotly_dark')
                 st.plotly_chart(fig, use_container_width=True)
+
+            # 성과 지표 표시
+            st.subheader("성과 지표")
+            performance_metrics = st.session_state.performance_report['performance_metrics']
+            metrics_df = pd.DataFrame(performance_metrics).transpose()  # T 대신 transpose() 사용
+            st.dataframe(metrics_df, use_container_width=True)
         else:
             st.info("성과 리포트를 생성하는 중입니다...")
     
