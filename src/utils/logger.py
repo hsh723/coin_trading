@@ -1,15 +1,17 @@
 """
 로깅 모듈
+로깅 설정 및 관리를 위한 기능을 제공합니다.
 """
 
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, Optional
 import json
 from ..utils.database import DatabaseManager
 
-def setup_logger(name: str) -> logging.Logger:
+def setup_logger(name: str = "coin_trading") -> logging.Logger:
     """
     로거 설정
     
@@ -17,19 +19,21 @@ def setup_logger(name: str) -> logging.Logger:
         name (str): 로거 이름
         
     Returns:
-        logging.Logger: 설정된 로거 객체
+        logging.Logger: 설정된 로거
     """
+    # 로그 디렉토리 생성
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    # 로그 파일 경로 설정
+    log_file = log_dir / f"{name}_{datetime.now().strftime('%Y%m%d')}.log"
+    
+    # 로거 생성
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     
-    # 로그 디렉토리 생성
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
     # 파일 핸들러 설정
-    log_file = os.path.join(log_dir, f'{name}_{datetime.now().strftime("%Y%m%d")}.log')
-    file_handler = logging.FileHandler(log_file)
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(logging.INFO)
     
     # 콘솔 핸들러 설정
@@ -37,7 +41,9 @@ def setup_logger(name: str) -> logging.Logger:
     console_handler.setLevel(logging.INFO)
     
     # 포맷터 설정
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
     
@@ -46,6 +52,57 @@ def setup_logger(name: str) -> logging.Logger:
     logger.addHandler(console_handler)
     
     return logger
+
+def get_logger(name: Optional[str] = None) -> logging.Logger:
+    """
+    로거 조회
+    
+    Args:
+        name (Optional[str]): 로거 이름
+        
+    Returns:
+        logging.Logger: 로거
+    """
+    if name is None:
+        name = "coin_trading"
+    return logging.getLogger(name)
+
+def log_message(logger: logging.Logger, message: str, level: str = "info") -> None:
+    """
+    로그 메시지 기록
+    
+    Args:
+        logger (logging.Logger): 로거
+        message (str): 로그 메시지
+        level (str): 로그 레벨
+    """
+    if level == "info":
+        logger.info(message)
+    elif level == "warning":
+        logger.warning(message)
+    elif level == "error":
+        logger.error(message)
+    elif level == "debug":
+        logger.debug(message)
+    elif level == "critical":
+        logger.critical(message)
+
+def clear_old_logs(days: int = 30) -> None:
+    """
+    오래된 로그 파일 삭제
+    
+    Args:
+        days (int): 보관 기간 (일)
+    """
+    log_dir = Path("logs")
+    if not log_dir.exists():
+        return
+        
+    current_time = datetime.now()
+    for log_file in log_dir.glob("*.log"):
+        file_time = datetime.fromtimestamp(log_file.stat().st_mtime)
+        if (current_time - file_time).days > days:
+            log_file.unlink()
 
 class TradeLogger:
     """거래 로깅 클래스"""
