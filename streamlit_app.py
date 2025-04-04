@@ -182,13 +182,25 @@ def get_sample_market_data():
         'volume': [1000 + i * 100 for i in range(len(date_range))]
     })
 
-def render_chart(data: Dict[str, Any], symbol: str):
+def render_chart(data, symbol: str):
     """차트 렌더링"""
-    if not data or 'ohlcv' not in data:
+    # 데이터 유효성 검사
+    if data is None or (isinstance(data, dict) and 'ohlcv' not in data):
         st.warning("시장 데이터가 없습니다.")
         return None
+    
+    # 데이터프레임 직접 받는 경우
+    if isinstance(data, pd.DataFrame):
+        df = data
+    else:
+        df = data['ohlcv']
+    
+    # 추가 검증
+    if df.empty:
+        st.warning("차트 데이터가 비어 있습니다.")
+        return None
         
-    df = data['ohlcv']
+    # 차트 생성
     fig = go.Figure()
     
     # 캔들스틱 차트
