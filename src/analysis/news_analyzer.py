@@ -383,82 +383,184 @@ class NewsAnalyzer:
         
         return result
         
-    def analyze_news_impact(self, symbol: str, timeframe: str = '1h', include_economy: bool = True) -> Dict:
-        """특정 심볼에 대한 뉴스 영향력 분석"""
-        news = self.fetch_news()
+    async def analyze_news_impact(self, symbol: str, news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        뉴스 영향 분석
         
-        # 경제 뉴스 포함 여부
-        if not include_economy:
-            news = [item for item in news if item['category'] == 'crypto']
+        Args:
+            symbol (str): 심볼
+            news_data (List[Dict[str, Any]]): 뉴스 데이터
             
-        price_data = self.db.get_price_data(symbol, timeframe)
-        
-        if not news or not price_data:
+        Returns:
+            Dict[str, Any]: 분석 결과
+        """
+        try:
+            # 가격 데이터 가져오기
+            price_data = await self._get_price_data(symbol)
+            
+            # 뉴스 영향 분석
+            impact_analysis = []
+            for news in news_data:
+                impact = await self._analyze_single_news(news, price_data)
+                impact_analysis.append(impact)
+                
+            # 종합 분석
+            summary = self._summarize_impact(impact_analysis)
+            
             return {
-                'symbol': symbol,
-                'timeframe': timeframe,
-                'news_count': 0,
-                'price_correlation': 0.0,
-                'significant_events': []
+                'individual_impacts': impact_analysis,
+                'summary': summary
             }
             
-        # 뉴스와 가격 데이터 정렬
-        news_df = pd.DataFrame(news)
-        price_df = pd.DataFrame(price_data)
-        
-        # 시간대 맞추기
-        news_df['timestamp'] = pd.to_datetime(news_df['timestamp'])
-        price_df['timestamp'] = pd.to_datetime(price_df['timestamp'])
-        
-        # 뉴스 발생 후 가격 변동 분석
-        significant_events = []
-        for _, news_item in news_df.iterrows():
-            news_time = news_item['timestamp']
+        except Exception as e:
+            self.logger.error(f"뉴스 영향 분석 실패: {str(e)}")
+            return {}
             
-            # 뉴스 발생 후 1시간 동안의 가격 변동
-            price_after = price_df[price_df['timestamp'] > news_time].head(4)  # 1시간 (15분 간격)
-            
-            if not price_after.empty:
-                price_change = (price_after['close'].iloc[-1] - price_after['close'].iloc[0]) / price_after['close'].iloc[0] * 100
-                
-                # 경제 뉴스의 경우 영향력 점수를 고려하여 임계값 조정
-                threshold = 1.0
-                if news_item['category'] == 'economy':
-                    threshold = 1.0 * (news_item.get('impact_score', 1) / 2)  # 영향력 점수에 따라 임계값 조정
-                
-                if abs(price_change) > threshold:
-                    significant_events.append({
-                        'title': news_item['title'],
-                        'timestamp': news_time,
-                        'price_change': price_change,
-                        'sentiment': self.analyze_sentiment(news_item['title']),
-                        'category': news_item['category'],
-                        'impact_keywords': news_item.get('impact_keywords', []),
-                        'impact_score': news_item.get('impact_score', 1)
-                    })
-                    
-        # 가격과 뉴스 감정의 상관관계 계산
-        sentiment_scores = [self.analyze_sentiment(title)['compound'] for title in news_df['title']]
-        price_changes = price_df['close'].pct_change().dropna()
+    async def _get_price_data(self, symbol: str) -> pd.DataFrame:
+        """
+        가격 데이터 조회
         
-        if len(sentiment_scores) > 1 and len(price_changes) > 1:
-            correlation = pd.Series(sentiment_scores).corr(pd.Series(price_changes))
+        Args:
+            symbol (str): 심볼
+            
+        Returns:
+            pd.DataFrame: 가격 데이터
+        """
+        try:
+            # 데이터베이스에서 가격 데이터 조회
+            price_data = await self.db.get_market_data(symbol)
+            return pd.DataFrame(price_data)
+            
+        except Exception as e:
+            self.logger.error(f"가격 데이터 조회 실패: {str(e)}")
+            return pd.DataFrame()
+            
+    async def _analyze_single_news(self, news: Dict[str, Any], price_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        개별 뉴스 영향 분석
+        
+        Args:
+            news (Dict[str, Any]): 뉴스 데이터
+            price_data (pd.DataFrame): 가격 데이터
+            
+        Returns:
+            Dict[str, Any]: 분석 결과
+        """
+        try:
+            news_time = datetime.fromisoformat(news['timestamp'])
+            
+            # 뉴스 전후 가격 변화 분석
+            pre_period = price_data[price_data['timestamp'] < news_time]
+            post_period = price_data[price_data['timestamp'] >= news_time]
+            
+            if len(pre_period) == 0 or len(post_period) == 0:
+                return {
+                    'news_id': news['id'],
+                    'impact': 'insufficient_data'
+                }
+                
+            # 가격 변화 계산
+            pre_price = pre_period['close'].iloc[-1]
+            post_price = post_period['close'].iloc[0]
+            price_change = (post_price - pre_price) / pre_price * 100
+            
+            # 변동성 변화 계산
+            pre_volatility = pre_period['close'].pct_change().std()
+            post_volatility = post_period['close'].pct_change().std()
+            volatility_change = (post_volatility - pre_volatility) / pre_volatility * 100
+            
+            # 거래량 변화 계산
+            pre_volume = pre_period['volume'].mean()
+            post_volume = post_period['volume'].mean()
+            volume_change = (post_volume - pre_volume) / pre_volume * 100
+            
+            return {
+                'news_id': news['id'],
+                'title': news['title'],
+                'timestamp': news['timestamp'],
+                'price_change': price_change,
+                'volatility_change': volatility_change,
+                'volume_change': volume_change,
+                'impact': self._classify_impact(price_change, volatility_change, volume_change)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"개별 뉴스 분석 실패: {str(e)}")
+            return {}
+            
+    def _classify_impact(self, price_change: float, volatility_change: float, volume_change: float) -> str:
+        """
+        영향도 분류
+        
+        Args:
+            price_change (float): 가격 변화율
+            volatility_change (float): 변동성 변화율
+            volume_change (float): 거래량 변화율
+            
+        Returns:
+            str: 영향도 등급
+        """
+        # 가격 변화 기준
+        if abs(price_change) > 5:
+            impact = 'high'
+        elif abs(price_change) > 2:
+            impact = 'medium'
         else:
-            correlation = 0.0
+            impact = 'low'
             
-        result = {
-            'symbol': symbol,
-            'timeframe': timeframe,
-            'news_count': len(news),
-            'price_correlation': correlation,
-            'significant_events': significant_events,
-            'include_economy': include_economy
-        }
+        # 변동성과 거래량 변화 고려
+        if volatility_change > 50 or volume_change > 100:
+            impact = 'high'
+        elif volatility_change > 20 or volume_change > 50:
+            impact = max(impact, 'medium')
+            
+        return impact
         
-        # 데이터베이스에 저장
-        self.db.save_news_impact(symbol, result)
+    def _summarize_impact(self, impact_analysis: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        영향 분석 요약
         
-        return result
+        Args:
+            impact_analysis (List[Dict[str, Any]]): 개별 영향 분석 결과
+            
+        Returns:
+            Dict[str, Any]: 요약 결과
+        """
+        try:
+            # 영향도별 카운트
+            impact_counts = {
+                'high': 0,
+                'medium': 0,
+                'low': 0
+            }
+            
+            # 평균 변화율
+            price_changes = []
+            volatility_changes = []
+            volume_changes = []
+            
+            for analysis in impact_analysis:
+                if 'impact' in analysis:
+                    impact_counts[analysis['impact']] += 1
+                    
+                if 'price_change' in analysis:
+                    price_changes.append(analysis['price_change'])
+                if 'volatility_change' in analysis:
+                    volatility_changes.append(analysis['volatility_change'])
+                if 'volume_change' in analysis:
+                    volume_changes.append(analysis['volume_change'])
+                    
+            return {
+                'impact_distribution': impact_counts,
+                'average_price_change': np.mean(price_changes) if price_changes else 0,
+                'average_volatility_change': np.mean(volatility_changes) if volatility_changes else 0,
+                'average_volume_change': np.mean(volume_changes) if volume_changes else 0,
+                'total_news': len(impact_analysis)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"영향 분석 요약 실패: {str(e)}")
+            return {}
         
     def get_news_summary(self, timeframe: str = '24h', category: str = 'all') -> Dict:
         """특정 기간 동안의 뉴스 요약"""
