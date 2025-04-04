@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 import asyncio
 from typing import Dict, Any, List, Optional
 import numpy as np
+from plotly.subplots import make_subplots
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -185,58 +186,90 @@ def get_sample_market_data():
 def render_chart(data, symbol: str):
     """차트 렌더링"""
     # 데이터 유효성 검사
-    if data is None or (isinstance(data, dict) and 'ohlcv' not in data):
+    if data is None:
         st.warning("시장 데이터가 없습니다.")
         return None
     
     # 데이터프레임 직접 받는 경우
     if isinstance(data, pd.DataFrame):
         df = data
-    else:
+    elif isinstance(data, dict) and 'ohlcv' in data:
         df = data['ohlcv']
+    else:
+        st.warning("유효한 시장 데이터 형식이 아닙니다.")
+        return None
     
-    # 추가 검증
+    # 데이터프레임 비어있는지 확인
     if df.empty:
         st.warning("차트 데이터가 비어 있습니다.")
         return None
+    
+    try:
+        # 서브플롯 생성
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                            vertical_spacing=0.1, 
+                            row_heights=[0.7, 0.3])
         
-    # 차트 생성
-    fig = go.Figure()
+        # 캔들스틱 차트 추가
+        fig.add_trace(
+            go.Candlestick(
+                x=df['timestamp'] if 'timestamp' in df.columns else df.index,
+                open=df['open'],
+                high=df['high'],
+                low=df['low'],
+                close=df['close'],
+                name=symbol
+            ),
+            row=1, col=1
+        )
+        
+        # 거래량 바 추가
+        if 'volume' in df.columns:
+            fig.add_trace(
+                go.Bar(
+                    x=df['timestamp'] if 'timestamp' in df.columns else df.index,
+                    y=df['volume'],
+                    name='거래량',
+                    marker_color='rgba(0, 0, 255, 0.3)'
+                ),
+                row=2, col=1
+            )
+        
+        # 레이아웃 설정
+        fig.update_layout(
+            title=f'{symbol} 차트',
+            xaxis_title='시간',
+            yaxis_title='가격',
+            height=600,
+            template='plotly_white',
+            showlegend=False,
+            margin=dict(l=50, r=50, t=50, b=50)
+        )
+        
+        # X축 레이아웃 설정
+        fig.update_xaxes(
+            rangeslider_visible=False,
+            showgrid=True
+        )
+        
+        # Y축 레이아웃 설정
+        fig.update_yaxes(
+            showgrid=True,
+            row=1, col=1
+        )
+        
+        # 볼륨 Y축 설정
+        fig.update_yaxes(
+            title_text='거래량',
+            showgrid=True,
+            row=2, col=1
+        )
+        
+        return fig
     
-    # 캔들스틱 차트
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['open'],
-        high=df['high'],
-        low=df['low'],
-        close=df['close'],
-        name='OHLC'
-    ))
-    
-    # 거래량 차트
-    fig.add_trace(go.Bar(
-        x=df.index,
-        y=df['volume'],
-        name='Volume',
-        yaxis='y2'
-    ))
-    
-    # 레이아웃 설정
-    fig.update_layout(
-        title=f'{symbol} Price Chart',
-        xaxis_title='Time',
-        yaxis_title='Price',
-        yaxis2_title='Volume',
-        yaxis2=dict(
-            overlaying='y',
-            side='right'
-        ),
-        xaxis_rangeslider_visible=False,
-        height=800,
-        template='plotly_dark'
-    )
-    
-    return fig
+    except Exception as e:
+        st.error(f"차트 렌더링 오류: {str(e)}")
+        return None
 
 def render_performance_metrics(report: dict):
     """성과 지표 렌더링"""
