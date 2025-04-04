@@ -5,6 +5,47 @@ database:
   backup_interval: 24  # 시간 단위
   max_backups: 7  # 최대 백업 파일 수
   encryption_key: "your-secret-key-here"  # 실제 운영 환경에서는 환경 변수로 관리
+  type: sqlite
+  tables:
+    market_data:
+      name: market_data
+      columns:
+        - timestamp
+        - symbol
+        - open
+        - high
+        - low
+        - close
+        - volume
+        - spread
+        - funding_rate
+        - open_interest
+        - liquidation
+    positions:
+      name: positions
+      columns:
+        - id
+        - symbol
+        - side
+        - entry_price
+        - size
+        - stop_loss
+        - take_profit
+        - entry_time
+        - strategy
+    trades:
+      name: trades
+      columns:
+        - id
+        - symbol
+        - side
+        - entry_price
+        - exit_price
+        - size
+        - pnl
+        - entry_time
+        - exit_time
+        - strategy
 
 # 거래소 설정
 exchange:
@@ -33,6 +74,12 @@ trading:
   position_size: 0.2  # 포지션 크기 (자본금의 20%)
   min_volume: 1000000  # 최소 거래량 (USDT)
   max_spread: 0.002  # 최대 허용 스프레드 (0.2%)
+  max_position_size: 0.1
+  max_leverage: 3
+  max_drawdown: 0.2
+  risk_per_trade: 0.01
+  min_capital: 1000
+  volatility_threshold: 0.05
 
 # 백테스트 설정
 backtest:
@@ -73,6 +120,8 @@ telegram:
     error: true  # 오류 알림
     daily_report: true  # 일일 리포트
     portfolio_update: true  # 포트폴리오 업데이트
+    position: true
+    risk: true
 
 # 로깅 설정
 logging:
@@ -123,4 +172,40 @@ news_analysis:
       - "ethereum"
       - "regulation"
       - "technology"
-      - "market" 
+      - "market"
+
+# API 설정
+api:
+  # 거래소 API 키
+  exchanges:
+    - binance
+    - bybit
+    - kucoin
+    - okx
+    - gateio
+  
+  # Binance API 키
+  binance_api_key: ${BINANCE_API_KEY}
+  binance_api_secret: ${BINANCE_API_SECRET}
+  
+  # Bybit API 키
+  bybit_api_key: ${BYBIT_API_KEY}
+  bybit_api_secret: ${BYBIT_API_SECRET}
+  
+  # KuCoin API 키
+  kucoin_api_key: ${KUCOIN_API_KEY}
+  kucoin_api_secret: ${KUCOIN_API_SECRET}
+  
+  # OKX API 키
+  okx_api_key: ${OKX_API_KEY}
+  okx_api_secret: ${OKX_API_SECRET}
+  
+  # Gate.io API 키
+  gateio_api_key: ${GATEIO_API_KEY}
+  gateio_api_secret: ${GATEIO_API_SECRET}
+  
+  # 뉴스 API 키
+  news_api_key: ${NEWS_API_KEY}
+  
+  # 감성 분석 API 키
+  sentiment_api_key: ${SENTIMENT_API_KEY} 

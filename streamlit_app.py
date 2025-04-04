@@ -24,6 +24,16 @@ from src.utils.logger import TradeLogger
 from src.analysis.technical_analyzer import TechnicalAnalyzer
 from src.analysis.self_learning import SelfLearningSystem
 from src.strategy.portfolio_manager import PortfolioManager
+from src.backtest.backtest_engine import BacktestEngine
+from src.backtest.backtest_analyzer import BacktestAnalyzer
+from src.dashboard.dashboard import Dashboard
+from src.utils.config import load_config
+from src.api.api_manager import APIManager
+from src.backup.backup_manager import BackupManager
+from src.optimization.optimizer import StrategyOptimizer, OptimizationResult
+from src.notification.telegram_notifier import telegram_notifier
+from src.notification.notification_manager import NotificationManager, NotificationRule
+from src.utils.performance_monitor import PerformanceMonitor, SystemMetrics
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -990,507 +1000,915 @@ def calculate_trade_stats(trades: list) -> dict:
     
     return stats
 
-def main():
-    """메인 함수"""
-    st.title("암호화폐 트레이딩 봇 🤖")
+def render_backtest_tab():
+    """백테스트 탭 렌더링"""
+    st.header("🔄 백테스트")
     
-    # 사이드바 설정
-    with st.sidebar:
-        st.header("⚙️ 설정")
+    # 백테스트 설정
+    with st.expander("⚙️ 백테스트 설정", expanded=True):
+        col1, col2, col3 = st.columns(3)
         
-        # API 설정
-        with st.expander("API 설정", expanded=False):
-            api_key = st.text_input("API 키", 
-                                value=st.session_state.api_key,
-                                type="password")
-            api_secret = st.text_input("API 시크릿",
-                                    value=st.session_state.api_secret,
-                                    type="password")
-            
-            if (api_key != st.session_state.api_key or 
-                api_secret != st.session_state.api_secret) and api_key and api_secret:
-                save_api_keys(api_key, api_secret)
-                st.success("✅ API 키가 저장되었습니다.")
+        with col1:
+            start_date = st.date_input(
+                "시작일",
+                value=datetime.now() - timedelta(days=180)
+            )
         
-        # 거래 설정
-        with st.expander("거래 설정", expanded=True):
-            symbol = st.selectbox(
-                "거래 심볼",
-                ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"]
+        with col2:
+            end_date = st.date_input(
+                "종료일",
+                value=datetime.now()
             )
-            timeframe = st.selectbox(
-                "기본 시간 프레임",
-                ["1m", "5m", "15m", "1h", "4h", "1d"]
-            )
+        
+        with col3:
             initial_capital = st.number_input(
-                "초기 자본금 (USDT)",
-                min_value=100.0,
-                max_value=1000000.0,
-                value=10000.0,
-                step=100.0
+                "초기 자본금",
+                min_value=1000,
+                value=10000,
+                step=1000,
+                format="%d"
             )
-            
-            # 리스크 관리 설정
-            st.subheader("리스크 관리")
-            risk_per_trade = st.slider(
-                "거래당 리스크 (%)",
-                min_value=0.1,
-                max_value=5.0,
-                value=1.0,
-                step=0.1
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            commission = st.number_input(
+                "수수료율",
+                min_value=0.0,
+                max_value=0.01,
+                value=0.001,
+                step=0.0001,
+                format="%.4f"
             )
-            max_trades = st.number_input(
-                "최대 동시 거래 수",
+        
+        with col2:
+            slippage = st.number_input(
+                "슬리피지",
+                min_value=0.0,
+                max_value=0.01,
+                value=0.001,
+                step=0.0001,
+                format="%.4f"
+            )
+    
+    # 전략 설정
+    with st.expander("📊 전략 설정", expanded=True):
+        strategy_params = {}
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            strategy_params['rsi_period'] = st.number_input(
+                "RSI 기간",
                 min_value=1,
-                max_value=10,
-                value=3
+                max_value=100,
+                value=14
             )
-        
-        # 알림 설정
-        with st.expander("알림 설정", expanded=False):
-            telegram_enabled = st.checkbox(
-                "텔레그램 알림 활성화",
-                value=st.session_state.telegram_enabled
-            )
-            if telegram_enabled != st.session_state.telegram_enabled:
-                st.session_state.telegram_enabled = telegram_enabled
-                setup_telegram()
             
-            if telegram_enabled:
-                bot_token = st.text_input(
-                    "텔레그램 봇 토큰",
-                    type="password",
-                    value=os.getenv('TELEGRAM_BOT_TOKEN', '')
-                )
-                chat_id = st.text_input(
-                    "텔레그램 채팅 ID",
-                    value=os.getenv('TELEGRAM_CHAT_ID', '')
-                )
-                
-                if bot_token and chat_id:
-                    # .env 파일에 저장
-                    with open('.env', 'a') as f:
-                        f.write(f"\nTELEGRAM_BOT_TOKEN={bot_token}")
-                        f.write(f"\nTELEGRAM_CHAT_ID={chat_id}")
-                    os.environ['TELEGRAM_BOT_TOKEN'] = bot_token
-                    os.environ['TELEGRAM_CHAT_ID'] = chat_id
-                
-                notification_types = st.multiselect(
-                    "알림 설정",
-                    ["진입 신호", "청산 신호", "손절", "익절", "시장 급변", "일일 리포트"],
-                    default=list(st.session_state.notification_types)
-                )
-                st.session_state.notification_types = set(notification_types)
-                
-                notification_interval = st.slider(
-                    "최소 알림 간격 (분)",
-                    0, 60, st.session_state.notification_interval
-                )
-                if notification_interval != st.session_state.notification_interval:
-                    st.session_state.notification_interval = notification_interval
-                    setup_telegram()
-        
-        # 봇 제어
-        st.header("🎮 봇 제어")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("봇 시작", use_container_width=True):
-                if not api_key or not api_secret:
-                    st.error("❌ API 키와 시크릿을 입력해주세요.")
-                else:
-                    config = {
-                        'api_key': api_key,
-                        'api_secret': api_secret,
-                        'symbol': symbol,
-                        'timeframe': timeframe,
-                        'initial_capital': initial_capital,
-                        'risk_per_trade': risk_per_trade,
-                        'max_trades': max_trades,
-                        'testnet': True
-                    }
-                    st.session_state.bot = TradingBot(config)
-                    start_bot()
-        
-        with col2:
-            if st.button("봇 중지", use_container_width=True):
-                stop_bot()
-    
-    # 메인 콘텐츠
-    tabs = st.tabs(["📊 대시보드", "📈 차트", "💰 성과", "📋 포지션", "📝 거래 내역", "🔔 알림"])
-    
-    # 대시보드 탭
-    with tabs[0]:
-        st.header("📊 대시보드")
-        
-        # 계좌 요약
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric(
-                "계좌 잔고",
-                f"${st.session_state.get('account_balance', 0):,.2f}",
-                f"{st.session_state.get('daily_pnl_pct', 0):.2f}%"
+            strategy_params['rsi_upper'] = st.number_input(
+                "RSI 상단",
+                min_value=50,
+                max_value=100,
+                value=70
             )
-        with col2:
-            st.metric(
-                "당일 손익",
-                f"${st.session_state.get('daily_pnl', 0):,.2f}",
-                f"{st.session_state.get('daily_trades', 0)} 거래"
-            )
-        with col3:
-            st.metric(
-                "미실현 손익",
-                f"${st.session_state.get('unrealized_pnl', 0):,.2f}",
-                f"{st.session_state.get('open_positions', 0)} 포지션"
-            )
-        with col4:
-            st.metric(
-                "승률",
-                f"{st.session_state.get('win_rate', 0):.1f}%",
-                f"총 {st.session_state.get('total_trades', 0)} 거래"
-            )
-        
-        # 현재 포지션 요약
-        st.subheader("📍 현재 포지션")
-        if st.session_state.positions:
-            position_df = pd.DataFrame(st.session_state.positions)
-            position_df['수익률'] = position_df['unrealized_pnl_pct'].map('{:.2%}'.format)
-            position_df['보유 시간'] = position_df['duration'].map('{:.1f}시간'.format)
             
-            # 스타일이 적용된 데이터프레임
-            st.dataframe(
-                position_df[[
-                    'symbol', 'side', 'entry_price', 'current_price',
-                    'amount', 'unrealized_pnl', '수익률', '보유 시간'
-                ]],
-                use_container_width=True,
-                height=200
+            strategy_params['rsi_lower'] = st.number_input(
+                "RSI 하단",
+                min_value=0,
+                max_value=50,
+                value=30
             )
-        else:
-            st.info("현재 열린 포지션이 없습니다.")
-        
-        # 멀티 타임프레임 분석
-        st.subheader("📊 멀티 타임프레임 분석")
-        timeframes = ['5m', '15m', '1h', '4h']
-        signals_df = pd.DataFrame({
-            '시간프레임': timeframes,
-            'RSI': np.random.randint(0, 100, len(timeframes)),
-            'MACD': ['매수' if x > 50 else '매도' for x in np.random.randint(0, 100, len(timeframes))],
-            'BB': ['상단', '중단', '하단', '중단'],
-            '추세': ['상승', '상승', '하락', '하락'],
-            '강도': np.random.randint(1, 10, len(timeframes))
-        })
-        st.dataframe(signals_df, use_container_width=True)
-        
-        # 시장 상황 요약
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📈 시장 동향")
-            market_df = pd.DataFrame({
-                '지표': ['변동성', '거래량', '추세 강도', '시장 상관성'],
-                '상태': ['높음', '보통', '강함', '낮음'],
-                '변화': ['↑', '→', '↑', '↓']
-            })
-            st.dataframe(market_df, use_container_width=True)
         
         with col2:
-            st.subheader("⚡ 실시간 신호")
-            signals_df = pd.DataFrame({
-                '심볼': ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'],
-                '신호': ['매수', '관망', '매도'],
-                '강도': ['강', '중', '약'],
-                '시간': ['1분 전', '5분 전', '15분 전']
-            })
-            st.dataframe(signals_df, use_container_width=True)
-    
-    # 차트 탭
-    with tabs[1]:
-        st.header("📈 차트")
-        
-        # 차트 설정
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            selected_symbol = st.selectbox(
-                "심볼 선택",
-                ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
-                key="chart_symbol"
+            strategy_params['ma_fast'] = st.number_input(
+                "단기 이동평균",
+                min_value=1,
+                max_value=100,
+                value=10
             )
-        with col2:
-            selected_timeframe = st.selectbox(
-                "시간프레임",
-                ["1m", "5m", "15m", "1h", "4h", "1d"],
-                key="chart_timeframe"
+            
+            strategy_params['ma_slow'] = st.number_input(
+                "장기 이동평균",
+                min_value=1,
+                max_value=200,
+                value=30
             )
-        with col3:
-            selected_indicators = st.multiselect(
-                "지표 선택",
-                ["RSI", "MACD", "볼린저밴드", "이동평균선"],
-                default=["RSI", "MACD"]
-            )
-        
-        # 차트 표시
-        if st.session_state.market_data is not None:
-            fig = render_chart(st.session_state.market_data, selected_symbol, selected_indicators)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("차트 데이터를 불러오는 중입니다...")
     
-    # 성과 탭
-    with tabs[2]:
-        st.header("💰 성과 분석")
-        
-        # 기간 선택
-        period = st.selectbox(
-            "기간 선택",
-            ["전체", "오늘", "1주일", "1개월", "3개월", "6개월", "1년"]
-        )
-        
-        # 성과 지표 표시
-        if st.session_state.performance_report:
-            render_performance_metrics(st.session_state.performance_report)
-        else:
-            st.info("성과 데이터가 없습니다.")
-    
-    # 포지션 탭
-    with tabs[3]:
-        st.header("📋 포지션 관리")
-        
-        # 현재 포지션
-        st.subheader("📍 현재 포지션")
-        if st.session_state.positions:
-            for pos in st.session_state.positions:
-                with st.expander(f"{pos['symbol']} {pos['side']} 포지션", expanded=True):
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("진입가", f"${pos['entry_price']:,.2f}")
-                        st.metric("현재가", f"${pos['current_price']:,.2f}")
-                    with col2:
-                        st.metric("수량", f"{pos['amount']:.4f}")
-                        st.metric("레버리지", f"{pos.get('leverage', 1)}x")
-                    with col3:
-                        st.metric("미실현 손익", f"${pos['unrealized_pnl']:,.2f}")
-                        st.metric("수익률", f"{pos['unrealized_pnl_pct']:.2%}")
+    # 백테스트 실행
+    if st.button("백테스트 실행"):
+        with st.spinner("백테스트 실행 중..."):
+            try:
+                # 전략 초기화
+                strategy = IntegratedStrategy()
+                strategy.update_parameters(strategy_params)
+                
+                # 백테스트 엔진 초기화
+                engine = BacktestEngine(
+                    strategy=strategy,
+                    start_date=start_date,
+                    end_date=end_date,
+                    initial_capital=initial_capital,
+                    commission=commission,
+                    slippage=slippage,
+                    database_manager=database_manager
+                )
+                
+                # 백테스트 실행
+                result = engine.run()
+                
+                if result:
+                    # 결과 저장
+                    st.session_state.backtest_result = result
                     
-                    # 포지션 관리 버튼
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        if st.button("전체 청산", key=f"close_{pos['symbol']}"):
-                            asyncio.run(close_position(pos['symbol']))
-                    with col2:
-                        if st.button("부분 청산", key=f"partial_{pos['symbol']}"):
-                            amount = st.number_input(
-                                "청산할 수량",
-                                min_value=0.0,
-                                max_value=float(pos['amount']),
-                                value=float(pos['amount'])/2,
-                                step=0.001,
-                                format="%.3f"
+                    # 분석기 초기화
+                    analyzer = BacktestAnalyzer(result)
+                    
+                    # 요약 통계
+                    st.subheader("📊 백테스트 결과")
+                    stats = analyzer.generate_summary_stats()
+                    st.dataframe(stats, use_container_width=True)
+                    
+                    # 차트
+                    charts = analyzer.plot_all()
+                    
+                    # 자본금 곡선
+                    st.plotly_chart(
+                        charts['equity_curve'],
+                        use_container_width=True
+                    )
+                    
+                    # 낙폭 차트
+                    st.plotly_chart(
+                        charts['drawdown'],
+                        use_container_width=True
+                    )
+                    
+                    # 월별 수익률
+                    st.plotly_chart(
+                        charts['monthly_returns'],
+                        use_container_width=True
+                    )
+                    
+                    # 거래 분석
+                    st.plotly_chart(
+                        charts['trade_analysis'],
+                        use_container_width=True
+                    )
+                    
+                    # 거래 내역
+                    st.subheader("📝 거래 내역")
+                    trades = analyzer.generate_trade_history()
+                    if not trades.empty:
+                        st.dataframe(trades, use_container_width=True)
+                    else:
+                        st.info("거래 내역이 없습니다.")
+                    
+                    # 결과 저장
+                    if st.button("결과 저장"):
+                        # 결과를 CSV로 저장
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        result_dir = "backtest_results"
+                        os.makedirs(result_dir, exist_ok=True)
+                        
+                        # 요약 통계 저장
+                        stats.to_csv(
+                            f"{result_dir}/stats_{timestamp}.csv",
+                            index=False,
+                            encoding='utf-8-sig'
+                        )
+                        
+                        # 거래 내역 저장
+                        if not trades.empty:
+                            trades.to_csv(
+                                f"{result_dir}/trades_{timestamp}.csv",
+                                index=False,
+                                encoding='utf-8-sig'
                             )
-                            if st.button("확인", key=f"partial_confirm_{pos['symbol']}"):
-                                asyncio.run(close_position(pos['symbol'], amount))
-                    with col3:
-                        if st.button("손절/익절 수정", key=f"sl_tp_{pos['symbol']}"):
-                            current_price = float(pos['current_price'])
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                stop_loss = st.number_input(
-                                    "손절가",
-                                    value=float(pos.get('stop_loss', current_price * 0.95)),
-                                    step=0.01,
-                                    format="%.2f"
-                                )
-                            with col2:
-                                take_profit = st.number_input(
-                                    "익절가",
-                                    value=float(pos.get('take_profit', current_price * 1.05)),
-                                    step=0.01,
-                                    format="%.2f"
-                                )
-                            if st.button("확인", key=f"sl_tp_confirm_{pos['symbol']}"):
-                                asyncio.run(modify_position(
-                                    pos['symbol'],
-                                    stop_loss=stop_loss,
-                                    take_profit=take_profit
-                                ))
-        else:
-            st.info("현재 열린 포지션이 없습니다.")
-        
-        # 주문 내역
-        st.subheader("📝 주문 내역")
-        orders_df = pd.DataFrame({
-            '시간': ['10:00:00', '10:05:00', '10:10:00'],
-            '심볼': ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'],
-            '유형': ['시장가', '지정가', '시장가'],
-            '방향': ['매수', '매도', '매수'],
-            '상태': ['체결', '대기', '체결'],
-            '가격': ['$42,000', '$2,800', '$95']
-        })
-        st.dataframe(orders_df, use_container_width=True)
+                        
+                        # 자본금 곡선 저장
+                        result.equity_curve.to_csv(
+                            f"{result_dir}/equity_{timestamp}.csv",
+                            encoding='utf-8-sig'
+                        )
+                        
+                        st.success("백테스트 결과가 저장되었습니다.")
+                else:
+                    st.error("백테스트 실행 실패")
+            
+            except Exception as e:
+                st.error(f"백테스트 중 오류 발생: {str(e)}")
+                logger.error(f"백테스트 중 오류 발생: {str(e)}")
+
+def render_api_tab(api_manager: APIManager):
+    """API 탭 렌더링"""
+    st.header("API 통합")
     
-    # 거래 내역 탭
-    with tabs[4]:
-        st.header("📝 거래 내역")
+    # 거래소 선택
+    exchange = st.selectbox(
+        "거래소 선택",
+        ["binance", "bybit", "kucoin", "okx", "gateio"]
+    )
+    
+    # 심볼 선택
+    symbol = st.text_input("심볼", "BTC/USDT")
+    
+    # API 데이터 조회
+    if st.button("데이터 조회"):
+        try:
+            # 시장 데이터
+            market_data = asyncio.run(api_manager.get_market_data(symbol, exchange_id=exchange))
+            if market_data:
+                df = pd.DataFrame([vars(md) for md in market_data])
+                st.subheader("시장 데이터")
+                st.dataframe(df)
+                
+                # 캔들스틱 차트
+                fig = go.Figure(data=[go.Candlestick(
+                    x=df['timestamp'],
+                    open=df['open'],
+                    high=df['high'],
+                    low=df['low'],
+                    close=df['close']
+                )])
+                st.plotly_chart(fig)
+            
+            # 호가 데이터
+            orderbook = asyncio.run(api_manager.get_order_book(symbol, exchange_id=exchange))
+            if orderbook:
+                st.subheader("호가 데이터")
+                st.write(f"스프레드: {orderbook.spread:.2f}")
+                
+                # 호가 차트
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=[bid[0] for bid in orderbook.bids],
+                    y=[bid[1] for bid in orderbook.bids],
+                    name='매수',
+                    marker_color='green'
+                ))
+                fig.add_trace(go.Bar(
+                    x=[ask[0] for ask in orderbook.asks],
+                    y=[ask[1] for ask in orderbook.asks],
+                    name='매도',
+                    marker_color='red'
+                ))
+                st.plotly_chart(fig)
+            
+            # 자금 조달 비율
+            funding_rate = asyncio.run(api_manager.get_funding_rate(symbol, exchange_id=exchange))
+            if funding_rate:
+                st.subheader("자금 조달 비율")
+                st.write(f"{funding_rate:.4%}")
+            
+            # 미체결약정
+            open_interest = asyncio.run(api_manager.get_open_interest(symbol, exchange_id=exchange))
+            if open_interest:
+                st.subheader("미체결약정")
+                st.write(f"{open_interest:,.2f}")
+            
+            # 청산 데이터
+            liquidation = asyncio.run(api_manager.get_liquidation(symbol, exchange_id=exchange))
+            if liquidation:
+                st.subheader("청산 데이터")
+                st.write(f"{liquidation:,.2f}")
+            
+            # 뉴스 데이터
+            news = asyncio.run(api_manager.get_news(symbol))
+            if news:
+                st.subheader("뉴스")
+                for article in news:
+                    st.write(f"**{article['title']}**")
+                    st.write(article['description'])
+                    st.write(f"출처: {article['source']['name']}")
+                    st.write("---")
+            
+            # 시장 감성 분석
+            sentiment = asyncio.run(api_manager.get_market_sentiment(symbol))
+            if sentiment:
+                st.subheader("시장 감성 분석")
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=['긍정', '부정', '중립'],
+                        y=[sentiment['positive'], sentiment['negative'], sentiment['neutral']],
+                        marker_color=['green', 'red', 'gray']
+                    )
+                ])
+                st.plotly_chart(fig)
+                
+        except Exception as e:
+            st.error(f"데이터 조회 중 오류 발생: {str(e)}")
+
+def render_backup_tab(backup_manager: BackupManager):
+    """백업 및 복구 탭 렌더링"""
+    st.header("백업 및 복구")
+    
+    # 백업 생성
+    st.subheader("백업 생성")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        include_database = st.checkbox("데이터베이스 포함", value=True)
+        include_config = st.checkbox("설정 파일 포함", value=True)
+    
+    with col2:
+        include_logs = st.checkbox("로그 파일 포함", value=True)
+        include_strategies = st.checkbox("전략 파일 포함", value=True)
+    
+    if st.button("백업 생성"):
+        try:
+            backup_name = asyncio.run(
+                backup_manager.create_backup(
+                    include_database=include_database,
+                    include_config=include_config,
+                    include_logs=include_logs,
+                    include_strategies=include_strategies
+                )
+            )
+            st.success(f"백업 생성 완료: {backup_name}")
+        except Exception as e:
+            st.error(f"백업 생성 중 오류 발생: {str(e)}")
+    
+    # 백업 목록
+    st.subheader("백업 목록")
+    try:
+        backups = asyncio.run(backup_manager.list_backups())
         
-        # 필터 설정
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            trade_symbol = st.selectbox(
-                "심볼 선택",
-                ["전체"] + list(set(t['symbol'] for t in st.session_state.trades))
-                if st.session_state.trades else ["전체"]
-            )
-        with col2:
-            trade_result = st.selectbox(
-                "거래 결과",
-                ["전체", "수익", "손실"]
-            )
-        with col3:
-            trade_period = st.selectbox(
-                "기간",
-                ["전체", "오늘", "1주일", "1개월", "3개월"]
-            )
-        
-        # 거래 내역 필터링 및 표시
-        if st.session_state.trades:
-            filtered_trades = filter_trades(
-                st.session_state.trades,
-                symbol=trade_symbol if trade_symbol != "전체" else None,
-                result=trade_result if trade_result != "전체" else None,
-                period=trade_period if trade_period != "전체" else None
+        if backups:
+            # 백업 목록을 DataFrame으로 변환
+            backup_data = []
+            for backup in backups:
+                backup_data.append({
+                    '이름': backup['name'],
+                    '생성 시간': backup['timestamp'],
+                    '크기 (MB)': round(backup['size'] / (1024 * 1024), 2),
+                    '데이터베이스': '✓' if backup['metadata']['include_database'] else '✗',
+                    '설정 파일': '✓' if backup['metadata']['include_config'] else '✗',
+                    '로그 파일': '✓' if backup['metadata']['include_logs'] else '✗',
+                    '전략 파일': '✓' if backup['metadata']['include_strategies'] else '✗'
+                })
+            
+            df = pd.DataFrame(backup_data)
+            st.dataframe(df)
+            
+            # 백업 복구 및 삭제
+            selected_backup = st.selectbox(
+                "백업 선택",
+                options=[backup['name'] for backup in backups],
+                index=0
             )
             
-            if filtered_trades:
-                trades_df = pd.DataFrame(filtered_trades)
-                trades_df['수익률'] = trades_df['pnl_pct'].map('{:.2%}'.format)
-                trades_df['거래시간'] = trades_df['duration'].map('{:.1f}시간'.format)
-                
-                st.dataframe(
-                    trades_df[[
-                        'timestamp', 'symbol', 'side', 'entry_price',
-                        'exit_price', 'amount', 'pnl', '수익률', '거래시간'
-                    ]],
-                    use_container_width=True
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("백업 복구"):
+                    try:
+                        asyncio.run(backup_manager.restore_backup(selected_backup))
+                        st.success(f"백업 복구 완료: {selected_backup}")
+                    except Exception as e:
+                        st.error(f"백업 복구 중 오류 발생: {str(e)}")
+            
+            with col2:
+                if st.button("백업 삭제"):
+                    try:
+                        asyncio.run(backup_manager.delete_backup(selected_backup))
+                        st.success(f"백업 삭제 완료: {selected_backup}")
+                    except Exception as e:
+                        st.error(f"백업 삭제 중 오류 발생: {str(e)}")
+        
+        else:
+            st.info("생성된 백업이 없습니다.")
+            
+    except Exception as e:
+        st.error(f"백업 목록 조회 중 오류 발생: {str(e)}")
+
+def render_optimization_tab(strategy: BaseStrategy):
+    """최적화 탭 렌더링"""
+    st.header("전략 최적화")
+    
+    # 최적화 설정
+    st.subheader("최적화 설정")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        initial_capital = st.number_input(
+            "초기 자본금",
+            min_value=1000.0,
+            value=10000.0,
+            step=1000.0
+        )
+        commission = st.number_input(
+            "수수료율",
+            min_value=0.0,
+            max_value=0.01,
+            value=0.001,
+            step=0.0001
+        )
+    
+    with col2:
+        n_iter = st.number_input(
+            "반복 횟수",
+            min_value=10,
+            max_value=1000,
+            value=100,
+            step=10
+        )
+        scoring_metric = st.selectbox(
+            "점수 메트릭",
+            options=['sharpe_ratio', 'total_return', 'profit_factor', 'win_rate', 'custom'],
+            index=0
+        )
+    
+    # 파라미터 그리드 설정
+    st.subheader("파라미터 그리드")
+    param_grid = {}
+    
+    for param in strategy.get_parameters():
+        col1, col2 = st.columns(2)
+        with col1:
+            param_type = st.selectbox(
+                f"{param} 타입",
+                options=['list', 'range'],
+                key=f"{param}_type"
+            )
+        with col2:
+            if param_type == 'list':
+                values = st.text_input(
+                    f"{param} 값 (쉼표로 구분)",
+                    key=f"{param}_list"
                 )
-                
-                # 거래 통계
-                st.subheader("📊 거래 통계")
-                stats = calculate_trade_stats(filtered_trades)
-                
+                param_grid[param] = [float(x.strip()) for x in values.split(',')]
+            else:
+                min_val = st.number_input(
+                    f"{param} 최소값",
+                    key=f"{param}_min"
+                )
+                max_val = st.number_input(
+                    f"{param} 최대값",
+                    key=f"{param}_max"
+                )
+                param_grid[param] = (min_val, max_val)
+    
+    # 최적화 실행
+    if st.button("최적화 실행"):
+        try:
+            # 최적화기 초기화
+            optimizer = StrategyOptimizer(
+                strategy=strategy,
+                param_grid=param_grid,
+                scoring_metric=scoring_metric,
+                n_iter=n_iter
+            )
+            
+            # 데이터 로드
+            data = pd.read_csv("data/market_data.csv")
+            
+            # 최적화 실행
+            with st.spinner("최적화 실행 중..."):
+                result = asyncio.run(
+                    optimizer.optimize(
+                        data=data,
+                        initial_capital=initial_capital,
+                        commission=commission
+                    )
+                )
+            
+            # 결과 표시
+            st.subheader("최적화 결과")
+            
+            # 최적 파라미터
+            st.write("최적 파라미터:")
+            st.json(result.best_params)
+            
+            # 성과 메트릭스
+            st.write("성과 메트릭스:")
+            metrics_df = pd.DataFrame([result.performance_metrics])
+            st.dataframe(metrics_df)
+            
+            # 파라미터 중요도
+            st.write("파라미터 중요도:")
+            importance = optimizer._calculate_param_importance(result)
+            importance_df = pd.DataFrame(
+                list(importance.items()),
+                columns=['파라미터', '중요도']
+            )
+            st.dataframe(importance_df)
+            
+            # 최적화 과정
+            st.write("최적화 과정:")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=result.optimization_history['iteration'],
+                y=result.optimization_history['score'],
+                mode='lines+markers',
+                name='점수'
+            ))
+            fig.update_layout(
+                title='최적화 과정',
+                xaxis_title='반복',
+                yaxis_title='점수'
+            )
+            st.plotly_chart(fig)
+            
+            # 결과 저장
+            if st.button("결과 저장"):
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    directory = f"optimization_results/{timestamp}"
+                    optimizer.save_results(result, directory)
+                    st.success(f"결과가 저장되었습니다: {directory}")
+                except Exception as e:
+                    st.error(f"결과 저장 중 오류 발생: {str(e)}")
+            
+        except Exception as e:
+            st.error(f"최적화 중 오류 발생: {str(e)}")
+
+def render_notification_tab(notification_manager: NotificationManager):
+    """알림 탭 렌더링"""
+    st.header("알림 설정")
+    
+    # 알림 규칙 관리
+    st.subheader("알림 규칙 관리")
+    
+    # 새 규칙 추가
+    with st.expander("새 규칙 추가", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            rule_name = st.text_input("규칙 이름")
+            condition = st.text_area("조건 (Python 표현식)", help="예: data['price'] > 50000")
+            message = st.text_area("메시지 템플릿", help="예: 가격이 {price}를 초과했습니다!")
+        
+        with col2:
+            priority = st.number_input("우선순위", min_value=1, max_value=5, value=1)
+            enabled = st.checkbox("활성화", value=True)
+            notification_types = st.multiselect(
+                "알림 유형",
+                options=['telegram'],
+                default=['telegram']
+            )
+        
+        if st.button("규칙 추가"):
+            try:
+                if notification_manager.add_rule(
+                    name=rule_name,
+                    condition=condition,
+                    message=message,
+                    priority=priority,
+                    enabled=enabled,
+                    notification_types=notification_types
+                ):
+                    st.success("알림 규칙이 추가되었습니다.")
+                else:
+                    st.error("알림 규칙 추가에 실패했습니다.")
+            except Exception as e:
+                st.error(f"오류 발생: {str(e)}")
+    
+    # 규칙 목록
+    st.subheader("규칙 목록")
+    
+    rules = list(notification_manager.rules.values())
+    if rules:
+        for rule in rules:
+            with st.expander(f"{rule.name} ({'활성화' if rule.enabled else '비활성화'})"):
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.subheader("💹 수익성 분석")
-                    profit_stats = pd.DataFrame({
-                        '지표': [
-                            '총 거래',
-                            '승률',
-                            '평균 수익',
-                            '최대 수익',
-                            '최대 손실',
-                            '손익비'
-                        ],
-                        '값': [
-                            f"{stats['total_trades']}건",
-                            f"{stats['win_rate']:.1%}",
-                            f"${stats['avg_profit']:,.2f}",
-                            f"${stats['max_profit']:,.2f}",
-                            f"${stats['max_loss']:,.2f}",
-                            f"{stats['profit_factor']:.2f}"
-                        ]
-                    })
-                    st.dataframe(profit_stats, use_container_width=True)
+                    st.write("조건:")
+                    st.code(rule.condition)
+                    st.write("메시지:")
+                    st.code(rule.message)
                 
                 with col2:
-                    st.subheader("⏱️ 시간대별 분석")
-                    trades_df['hour'] = pd.to_datetime(trades_df['timestamp']).dt.hour
-                    time_stats = trades_df.groupby(pd.cut(
-                        trades_df['hour'],
-                        bins=[0, 8, 16, 24],
-                        labels=['아시아', '유럽', '미국']
-                    )).agg({
-                        'symbol': 'count',
-                        'pnl': lambda x: (x > 0).mean()
-                    }).reset_index()
-                    
-                    time_stats.columns = ['시간대', '거래수', '승률']
-                    time_stats['승률'] = time_stats['승률'].map('{:.1%}'.format)
-                    st.dataframe(time_stats, use_container_width=True)
-            else:
-                st.info("필터링된 거래 내역이 없습니다.")
-        else:
-            st.info("거래 내역이 없습니다.")
+                    st.write(f"우선순위: {rule.priority}")
+                    st.write(f"알림 유형: {', '.join(rule.notification_types)}")
+                    st.write(f"생성일: {rule.created_at}")
+                    st.write(f"마지막 실행: {rule.last_triggered}")
+                    st.write(f"실행 횟수: {rule.trigger_count}")
+                
+                if st.button("규칙 수정", key=f"edit_{rule.name}"):
+                    st.session_state.editing_rule = rule.name
+                
+                if st.button("규칙 삭제", key=f"delete_{rule.name}"):
+                    if notification_manager.remove_rule(rule.name):
+                        st.success("규칙이 삭제되었습니다.")
+                        st.experimental_rerun()
+                    else:
+                        st.error("규칙 삭제에 실패했습니다.")
     
-    # 알림 탭
-    with tabs[5]:
-        st.header("🔔 알림 센터")
-        
-        # 알림 설정
-        with st.expander("⚙️ 알림 설정", expanded=False):
-            telegram_enabled = st.checkbox(
-                "텔레그램 알림 활성화",
-                value=st.session_state.telegram_enabled
+    # 규칙 수정
+    if hasattr(st.session_state, 'editing_rule'):
+        rule = notification_manager.rules.get(st.session_state.editing_rule)
+        if rule:
+            with st.expander("규칙 수정", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    condition = st.text_area("조건", value=rule.condition)
+                    message = st.text_area("메시지", value=rule.message)
+                
+                with col2:
+                    priority = st.number_input("우선순위", value=rule.priority)
+                    enabled = st.checkbox("활성화", value=rule.enabled)
+                    notification_types = st.multiselect(
+                        "알림 유형",
+                        options=['telegram'],
+                        default=rule.notification_types
+                    )
+                
+                if st.button("수정 저장"):
+                    if notification_manager.update_rule(
+                        name=rule.name,
+                        condition=condition,
+                        message=message,
+                        priority=priority,
+                        enabled=enabled,
+                        notification_types=notification_types
+                    ):
+                        st.success("규칙이 수정되었습니다.")
+                        del st.session_state.editing_rule
+                        st.experimental_rerun()
+                    else:
+                        st.error("규칙 수정에 실패했습니다.")
+    
+    # 알림 이력
+    st.subheader("알림 이력")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        start_date = st.date_input("시작일", value=datetime.now() - timedelta(days=7))
+        rule_name = st.selectbox(
+            "규칙 선택",
+            options=['전체'] + [rule.name for rule in rules],
+            index=0
+        )
+    
+    with col2:
+        end_date = st.date_input("종료일", value=datetime.now())
+        if st.button("이력 조회"):
+            history = notification_manager.get_notification_history(
+                start_date=datetime.combine(start_date, datetime.min.time()),
+                end_date=datetime.combine(end_date, datetime.max.time()),
+                rule_name=rule_name if rule_name != '전체' else None
             )
-            if telegram_enabled != st.session_state.telegram_enabled:
-                st.session_state.telegram_enabled = telegram_enabled
-                setup_telegram()
             
-            if telegram_enabled:
-                notification_types = st.multiselect(
-                    "알림 유형 선택",
-                    ["진입 신호", "청산 신호", "손절", "익절", "시장 급변", "일일 리포트"],
-                    default=list(st.session_state.notification_types)
-                )
-                st.session_state.notification_types = set(notification_types)
+            if history:
+                df = pd.DataFrame(history)
+                st.dataframe(df)
                 
-                notification_interval = st.slider(
-                    "최소 알림 간격 (분)",
-                    0, 60, st.session_state.notification_interval
-                )
-                if notification_interval != st.session_state.notification_interval:
-                    st.session_state.notification_interval = notification_interval
-                    setup_telegram()
-        
-        # 알림 테스트
-        if st.button("테스트 알림 전송"):
-            asyncio.run(telegram_notifier.send_message(
-                "🔔 테스트 알림입니다.",
-                "test"
-            ))
-            st.success("테스트 알림이 전송되었습니다.")
-        
-        # 알림 내역
-        st.subheader("📋 알림 내역")
-        if 'alerts' not in st.session_state:
-            st.session_state.alerts = []
-        
-        alerts_df = pd.DataFrame(st.session_state.alerts)
-        if not alerts_df.empty:
-            st.dataframe(alerts_df, use_container_width=True)
-        else:
-            st.info("알림 내역이 없습니다.")
+                if st.button("이력 삭제"):
+                    if notification_manager.clear_notification_history(
+                        start_date=datetime.combine(start_date, datetime.min.time()),
+                        end_date=datetime.combine(end_date, datetime.max.time()),
+                        rule_name=rule_name if rule_name != '전체' else None
+                    ):
+                        st.success("알림 이력이 삭제되었습니다.")
+                        st.experimental_rerun()
+                    else:
+                        st.error("알림 이력 삭제에 실패했습니다.")
+            else:
+                st.info("조회된 알림 이력이 없습니다.")
+
+def render_performance_tab(performance_monitor: PerformanceMonitor):
+    """성능 모니터링 탭 렌더링"""
+    st.header("성능 모니터링")
     
-    # 실시간 업데이트
-    if st.session_state.bot and st.session_state.bot.is_running:
-        if st.session_state.last_update is None or \
-           (datetime.now() - st.session_state.last_update).seconds >= 5:
+    # 현재 메트릭스
+    st.subheader("현재 상태")
+    current_metrics = performance_monitor.get_current_metrics()
+    
+    if current_metrics:
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "CPU 사용량",
+                f"{current_metrics.cpu_usage:.1f}%",
+                delta=None
+            )
+            st.metric(
+                "메모리 사용량",
+                f"{current_metrics.memory_usage:.1f}%",
+                delta=None
+            )
+        
+        with col2:
+            st.metric(
+                "디스크 사용량",
+                f"{current_metrics.disk_usage:.1f}%",
+                delta=None
+            )
+            st.metric(
+                "스왑 사용량",
+                f"{current_metrics.swap_usage:.1f}%",
+                delta=None
+            )
+        
+        with col3:
+            st.metric(
+                "프로세스 수",
+                f"{current_metrics.process_count}",
+                delta=None
+            )
+            st.metric(
+                "스레드 수",
+                f"{current_metrics.thread_count}",
+                delta=None
+            )
+        
+        with col4:
+            st.metric(
+                "열린 파일 수",
+                f"{current_metrics.open_files}",
+                delta=None
+            )
+            st.metric(
+                "네트워크 송신",
+                f"{current_metrics.network_io['bytes_sent'] / (1024 * 1024):.1f} MB",
+                delta=None
+            )
+    
+    # 메트릭스 히스토리
+    st.subheader("메트릭스 히스토리")
+    metrics_history = performance_monitor.get_metrics_history()
+    
+    if metrics_history:
+        df = pd.DataFrame([vars(m) for m in metrics_history])
+        
+        # CPU 및 메모리 사용량 차트
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True)
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'],
+                y=df['cpu_usage'],
+                name='CPU 사용량',
+                line=dict(color='blue')
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'],
+                y=df['memory_usage'],
+                name='메모리 사용량',
+                line=dict(color='red')
+            ),
+            row=2, col=1
+        )
+        
+        fig.update_layout(
+            title='CPU 및 메모리 사용량',
+            height=600,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 디스크 및 스왑 사용량 차트
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True)
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'],
+                y=df['disk_usage'],
+                name='디스크 사용량',
+                line=dict(color='green')
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'],
+                y=df['swap_usage'],
+                name='스왑 사용량',
+                line=dict(color='purple')
+            ),
+            row=2, col=1
+        )
+        
+        fig.update_layout(
+            title='디스크 및 스왑 사용량',
+            height=600,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 네트워크 I/O 차트
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True)
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'],
+                y=df['network_io'].apply(lambda x: x['bytes_sent'] / (1024 * 1024)),
+                name='송신 (MB)',
+                line=dict(color='orange')
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'],
+                y=df['network_io'].apply(lambda x: x['bytes_recv'] / (1024 * 1024)),
+                name='수신 (MB)',
+                line=dict(color='cyan')
+            ),
+            row=2, col=1
+        )
+        
+        fig.update_layout(
+            title='네트워크 I/O',
+            height=600,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # 경고 메시지
+    alerts = performance_monitor.check_alerts()
+    if alerts:
+        st.warning("시스템 경고:")
+        for alert in alerts:
+            st.write(f"- {alert}")
+    
+    # 메트릭스 관리
+    st.subheader("메트릭스 관리")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("메트릭스 저장"):
             try:
-                # 비동기 함수를 동기적으로 실행
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                # 데이터 업데이트
-                loop.run_until_complete(update_market_data())
-                
-                # 이벤트 루프 종료
-                loop.close()
-                
-                # 화면 갱신
-                st.rerun()
+                performance_monitor.save_metrics()
+                st.success("메트릭스가 저장되었습니다.")
             except Exception as e:
-                st.error(f"데이터 업데이트 중 오류 발생: {str(e)}")
-                logger.error(f"데이터 업데이트 중 오류 발생: {str(e)}")
-                
-                # 텔레그램 알림 전송
-                asyncio.run(telegram_notifier.send_error(str(e)))
+                st.error(f"메트릭스 저장 중 오류 발생: {str(e)}")
+    
+    with col2:
+        if st.button("메트릭스 초기화"):
+            try:
+                performance_monitor.clear_metrics()
+                st.success("메트릭스가 초기화되었습니다.")
+            except Exception as e:
+                st.error(f"메트릭스 초기화 중 오류 발생: {str(e)}")
+
+def main():
+    """메인 함수"""
+    try:
+        # 설정 로드
+        config = load_config()
+        
+        # API 관리자 초기화
+        api_manager = APIManager(config)
+        
+        # 대시보드 초기화
+        dashboard = Dashboard(config)
+        
+        # 백업 관리자 초기화
+        backup_manager = BackupManager(database_manager=get_database_manager())
+        
+        # 성능 모니터링 초기화
+        performance_monitor = PerformanceMonitor()
+        performance_monitor.start()
+        
+        # 사이드바 설정
+        st.sidebar.title("설정")
+        
+        # 탭 선택
+        tab = st.sidebar.radio(
+            "메뉴",
+            ["대시보드", "백테스트", "API 통합", "백업 및 복구", "전략 최적화", "알림 설정", "성능 모니터링"]
+        )
+        
+        # 선택된 탭 렌더링
+        if tab == "대시보드":
+            dashboard.render()
+        elif tab == "백테스트":
+            render_backtest_tab()
+        elif tab == "API 통합":
+            render_api_tab(api_manager)
+        elif tab == "백업 및 복구":
+            render_backup_tab(backup_manager)
+        elif tab == "전략 최적화":
+            render_optimization_tab(strategy)
+        elif tab == "알림 설정":
+            render_notification_tab(NotificationManager(
+                database_manager=get_database_manager(),
+                telegram_notifier=TelegramNotifier()
+            ))
+        elif tab == "성능 모니터링":
+            render_performance_tab(performance_monitor)
+            
+    except Exception as e:
+        logger.error(f"앱 실행 중 오류 발생: {str(e)}")
+        st.error(f"오류 발생: {str(e)}")
+    finally:
+        # 성능 모니터링 중지
+        if 'performance_monitor' in locals():
+            performance_monitor.stop()
 
 if __name__ == "__main__":
     init_session_state()
