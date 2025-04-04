@@ -8,6 +8,7 @@ import yaml
 from pathlib import Path
 import logging
 import re
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,98 @@ class ConfigManager:
             )
         
         return message
+
+def load_config(config_path: str = "config/config.yaml") -> Dict[str, Any]:
+    """
+    설정 파일 로드
+    
+    Args:
+        config_path (str): 설정 파일 경로
+        
+    Returns:
+        Dict[str, Any]: 설정 데이터
+    """
+    try:
+        config_file = Path(config_path)
+        if not config_file.exists():
+            logger.error(f"설정 파일을 찾을 수 없습니다: {config_path}")
+            raise FileNotFoundError(f"설정 파일을 찾을 수 없습니다: {config_path}")
+            
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+            
+        logger.info(f"설정 파일 로드 성공: {config_path}")
+        return config
+        
+    except Exception as e:
+        logger.error(f"설정 파일 로드 실패: {str(e)}")
+        raise
+        
+def save_config(config: Dict[str, Any], config_path: str = "config/config.yaml") -> None:
+    """
+    설정 파일 저장
+    
+    Args:
+        config (Dict[str, Any]): 저장할 설정 데이터
+        config_path (str): 설정 파일 경로
+    """
+    try:
+        config_file = Path(config_path)
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(config_file, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+            
+        logger.info(f"설정 파일 저장 성공: {config_path}")
+        
+    except Exception as e:
+        logger.error(f"설정 파일 저장 실패: {str(e)}")
+        raise
+        
+def get_config_value(config: Dict[str, Any], key: str, default: Any = None) -> Any:
+    """
+    설정 값 조회
+    
+    Args:
+        config (Dict[str, Any]): 설정 데이터
+        key (str): 조회할 키
+        default (Any): 기본값
+        
+    Returns:
+        Any: 설정 값
+    """
+    try:
+        keys = key.split('.')
+        value = config
+        for k in keys:
+            value = value.get(k, {})
+        return value if value != {} else default
+        
+    except Exception as e:
+        logger.error(f"설정 값 조회 실패: {str(e)}")
+        return default
+        
+def set_config_value(config: Dict[str, Any], key: str, value: Any) -> None:
+    """
+    설정 값 설정
+    
+    Args:
+        config (Dict[str, Any]): 설정 데이터
+        key (str): 설정할 키
+        value (Any): 설정할 값
+    """
+    try:
+        keys = key.split('.')
+        current = config
+        for k in keys[:-1]:
+            if k not in current:
+                current[k] = {}
+            current = current[k]
+        current[keys[-1]] = value
+        
+    except Exception as e:
+        logger.error(f"설정 값 설정 실패: {str(e)}")
+        raise
 
 # 전역 설정 관리자 인스턴스
 config_manager = ConfigManager() 
