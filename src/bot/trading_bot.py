@@ -1,9 +1,17 @@
+"""
+트레이딩 봇 모듈
+"""
+
+import os
+import sys
+from pathlib import Path
 import asyncio
-import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
-from abc import ABC, abstractmethod
 import pandas as pd
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
+import json
+import time
+from abc import ABC, abstractmethod
 from src.exchange.binance_exchange import BinanceExchange
 from ..analysis.news_analyzer import NewsAnalyzer
 from ..analysis.technical_analyzer import TechnicalAnalyzer
@@ -13,6 +21,16 @@ from ..database.database import Database
 from ..utils.logger import setup_logger
 from ..utils.database import DatabaseManager
 from ..utils.telegram import TelegramNotifier
+
+# 프로젝트 루트 경로를 시스템 경로에 추가
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+# 지연 임포트 적용
+def get_exchange():
+    return BinanceExchange()
+
+def get_logger():
+    return setup_logger('trading_bot')
 
 class TradingBot(ABC):
     """트레이딩 봇 기본 클래스"""
@@ -25,13 +43,9 @@ class TradingBot(ABC):
             config (Dict[str, Any]): 설정 정보
         """
         self.config = config
-        self.logger = setup_logger('trading_bot')
+        self.logger = get_logger()
         self.database = DatabaseManager()
-        self.exchange = BinanceExchange(
-            api_key=config.get('api_key'),
-            api_secret=config.get('api_secret'),
-            testnet=config.get('testnet', True)
-        )
+        self.exchange = get_exchange()
         self.strategy = IntegratedStrategy(db=self.database)
         self.risk_manager = RiskManager(
             initial_capital=config.get('initial_capital', 10000.0)
