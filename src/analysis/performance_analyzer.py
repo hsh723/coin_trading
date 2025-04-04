@@ -1,5 +1,5 @@
 """
-성능 분석 및 개선 모듈
+성과 분석 모듈
 """
 
 import asyncio
@@ -20,6 +20,7 @@ from src.database.database_manager import database_manager
 from src.utils.config_loader import get_config
 import uuid
 from ..utils.logger import setup_logger
+from src.visualization.advanced_charts import AdvancedCharts
 
 # Windows 환경에서 이벤트 루프 정책 변경
 if platform.system() == 'Windows':
@@ -30,9 +31,16 @@ logger = logging.getLogger(__name__)
 class PerformanceAnalyzer:
     """성과 분석 클래스"""
     
-    def __init__(self):
-        """성과 분석 클래스 초기화"""
-        self.logger = setup_logger('performance_analyzer')
+    def __init__(self, db_manager):
+        """
+        초기화
+        
+        Args:
+            db_manager: 데이터베이스 관리자
+        """
+        self.db_manager = db_manager
+        self.logger = logging.getLogger(__name__)
+        self.charts = AdvancedCharts()
         self.model = RandomForestClassifier(n_estimators=100)
         self.scaler = StandardScaler()
         self.min_samples = 100
@@ -888,4 +896,4 @@ class PerformanceAnalyzer:
             return {}
 
 # 전역 성능 분석기 인스턴스
-performance_analyzer = PerformanceAnalyzer() 
+performance_analyzer = PerformanceAnalyzer(database_manager) 

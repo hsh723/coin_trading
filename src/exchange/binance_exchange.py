@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Any, List, Optional
 import ccxt
-from ..utils.logger import setup_logger
+from src.utils.logger import setup_logger
 
 class BinanceExchange:
     """Binance 거래소 클래스"""
