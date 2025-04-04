@@ -22,6 +22,8 @@ from src.bot.trading_bot import TradingBot
 from src.utils.database import DatabaseManager
 from src.utils.logger import TradeLogger
 from src.analysis.technical_analyzer import TechnicalAnalyzer
+from src.analysis.self_learning import SelfLearningSystem
+from src.strategy.portfolio_manager import PortfolioManager
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
@@ -824,6 +826,12 @@ def main():
         # 내보내기 버튼
         if st.button("로그 내보내기"):
             if export_format == "CSV":
+                # 로그를 CSV로 내보내는 로직을 구현해야 합니다.
+                st.error("로그를 CSV로 내보내는 기능은 아직 구현되지 않았습니다.")
+            elif export_format == "JSON":
+                # 로그를 JSON으로 내보내는 로직을 구현해야 합니다.
+                st.error("로그를 JSON으로 내보내는 기능은 아직 구현되지 않았습니다.")
+
 if __name__ == "__main__":
     init_session_state()
     main() 
