@@ -658,6 +658,135 @@ def main():
             except Exception as e:
                 st.error(f"데이터 업데이트 중 오류 발생: {str(e)}")
 
+    # 성과 분석 탭
+    with tab2:
+        st.title("📊 성과 분석")
+        
+        # 누적 수익 차트
+        st.subheader("📈 누적 수익")
+        time_range = st.selectbox("기간 선택", ["일별", "주별", "월별", "전체"])
+        
+        # 샘플 데이터 생성
+        dates = pd.date_range(start='2024-01-01', periods=30, freq='D')
+        returns = pd.Series([0.01 * (i % 3 - 1) for i in range(30)], index=dates)
+        cumulative_returns = (1 + returns).cumprod()
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=dates, y=cumulative_returns, mode='lines', name='누적 수익'))
+        fig.update_layout(title="누적 수익률", xaxis_title="날짜", yaxis_title="수익률")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 주요 성과 지표
+        st.subheader("📊 주요 성과 지표")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("승률", "65%", "+5%")
+        with col2:
+            st.metric("손익비", "2.5", "+0.3")
+        with col3:
+            st.metric("최대 낙폭", "-15%", "-2%")
+        with col4:
+            st.metric("샤프 비율", "1.8", "+0.2")
+        
+        # 전략별 성과
+        st.subheader("📊 전략별 성과")
+        strategies = pd.DataFrame({
+            '전략': ['볼린저 밴드', 'RSI', 'MACD', '통합 전략'],
+            '수익률': ['+12%', '+8%', '+5%', '+15%'],
+            '승률': ['70%', '65%', '60%', '75%'],
+            '거래 횟수': [50, 45, 40, 60]
+        })
+        st.dataframe(strategies, use_container_width=True)
+        
+        # 시간대별 성과
+        st.subheader("📊 시간대별 성과")
+        timeframes = pd.DataFrame({
+            '시간대': ['아시아', '유럽', '미국'],
+            '수익률': ['+8%', '+12%', '+10%'],
+            '거래 횟수': [30, 40, 35],
+            '평균 수익': ['+0.5%', '+0.8%', '+0.6%']
+        })
+        st.dataframe(timeframes, use_container_width=True)
+        
+        # 코인별 성과
+        st.subheader("📊 코인별 성과")
+        coins = pd.DataFrame({
+            '코인': ['BTC', 'ETH', 'SOL', 'BNB'],
+            '수익률': ['+15%', '+10%', '+8%', '+12%'],
+            '거래 횟수': [25, 20, 15, 18],
+            '승률': ['75%', '70%', '65%', '72%']
+        })
+        st.dataframe(coins, use_container_width=True)
+
+    # 시장 분석 탭
+    with tab4:
+        st.title("📈 시장 분석")
+        
+        # 멀티 타임프레임 차트
+        st.subheader("📊 멀티 타임프레임 차트")
+        selected_timeframe = st.selectbox("시간 프레임 선택", ["5분", "15분", "1시간", "4시간"])
+        
+        # 샘플 데이터 생성
+        dates = pd.date_range(start='2024-01-01', periods=100, freq='5T')
+        prices = pd.Series([50000 + i*10 for i in range(100)], index=dates)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=dates,
+            open=prices,
+            high=prices + 100,
+            low=prices - 100,
+            close=prices + 50,
+            name='가격'
+        ))
+        fig.update_layout(title=f"{selected_timeframe} 차트", xaxis_title="시간", yaxis_title="가격")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 주요 기술 지표
+        st.subheader("📊 주요 기술 지표")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("RSI", "45", "-5")
+        with col2:
+            st.metric("MACD", "0.5", "+0.1")
+        with col3:
+            st.metric("볼린저 밴드", "중간", "하단")
+        
+        # 시장 추세 분석
+        st.subheader("📈 시장 추세 분석")
+        trends = pd.DataFrame({
+            '시간 프레임': ['5분', '15분', '1시간', '4시간'],
+            '추세': ['하락', '하락', '상승', '상승'],
+            '강도': ['강함', '중간', '약함', '중간'],
+            '신뢰도': ['높음', '중간', '낮음', '중간']
+        })
+        st.dataframe(trends, use_container_width=True)
+        
+        # 뉴스 요약
+        st.subheader("📰 뉴스 요약")
+        news = pd.DataFrame({
+            '시간': ['10분 전', '30분 전', '1시간 전', '2시간 전'],
+            '제목': [
+                '비트코인, 5만 달러 돌파',
+                '이더리움, 런던 하드포크 성공',
+                '솔라나, 네트워크 장애 발생',
+                '바이낸스, 새로운 상장 코인 발표'
+            ],
+            '감성': ['긍정', '긍정', '부정', '중립'],
+            '영향도': ['높음', '중간', '높음', '낮음']
+        })
+        st.dataframe(news, use_container_width=True)
+        
+        # 변동성 분석
+        st.subheader("📊 변동성 분석")
+        volatility = pd.DataFrame({
+            '시간 프레임': ['5분', '15분', '1시간', '4시간'],
+            'ATR': ['100', '200', '500', '1000'],
+            '변동성': ['높음', '중간', '낮음', '중간'],
+            '추세': ['상승', '하락', '상승', '하락']
+        })
+        st.dataframe(volatility, use_container_width=True)
+
 if __name__ == "__main__":
     init_session_state()
     main() 

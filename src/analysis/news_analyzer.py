@@ -18,6 +18,8 @@ import requests
 from bs4 import BeautifulSoup
 import feedparser
 import pytz
+import aiohttp
+import re
 
 # 내부 모듈 import
 from ..data.news_collector import news_collector
@@ -56,7 +58,8 @@ class NewsAnalyzer:
             'reuters': 'https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best',
             'wsj': 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
             'cnbc': 'https://www.cnbc.com/id/19746125/device/rss/rss.xml',
-            'marketwatch': 'https://www.marketwatch.com/rss/topstories'
+            'marketwatch': 'https://www.marketwatch.com/rss/topstories',
+            'bitcoinmagazine': 'https://bitcoinmagazine.com/'
         }
         
         # CryptoCompare API 설정
@@ -636,6 +639,244 @@ class NewsAnalyzer:
             'top_keywords': [word for word, _ in top_keywords],
             'significant_events': significant_events
         }
+
+    async def fetch_news(self, source: str) -> List[Dict[str, Any]]:
+        """
+        뉴스 수집
+        
+        Args:
+            source (str): 뉴스 소스
+            
+        Returns:
+            List[Dict[str, Any]]: 뉴스 목록
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.rss_feeds[source]) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+                        
+                        news_items = []
+                        if source == 'coindesk':
+                            articles = soup.find_all('article')
+                            for article in articles:
+                                title = article.find('h3')
+                                if title:
+                                    news_items.append({
+                                        'title': title.text.strip(),
+                                        'url': article.find('a')['href'],
+                                        'source': source,
+                                        'timestamp': datetime.now()
+                                    })
+                        elif source == 'cointelegraph':
+                            articles = soup.find_all('article')
+                            for article in articles:
+                                title = article.find('h3')
+                                if title:
+                                    news_items.append({
+                                        'title': title.text.strip(),
+                                        'url': article.find('a')['href'],
+                                        'source': source,
+                                        'timestamp': datetime.now()
+                                    })
+                        
+                        return news_items
+                    else:
+                        self.logger.error(f"뉴스 수집 실패: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            self.logger.error(f"뉴스 수집 중 오류 발생: {str(e)}")
+            return []
+            
+    async def analyze_sentiment(self, text: str) -> Dict[str, float]:
+        """
+        감성 분석
+        
+        Args:
+            text (str): 분석할 텍스트
+            
+        Returns:
+            Dict[str, float]: 감성 분석 결과
+        """
+        try:
+            blob = TextBlob(text)
+            sentiment = blob.sentiment
+            
+            return {
+                'polarity': sentiment.polarity,  # -1 ~ 1
+                'subjectivity': sentiment.subjectivity  # 0 ~ 1
+            }
+            
+        except Exception as e:
+            self.logger.error(f"감성 분석 중 오류 발생: {str(e)}")
+            return {'polarity': 0, 'subjectivity': 0}
+            
+    def calculate_impact_score(self, news: Dict[str, Any]) -> float:
+        """
+        뉴스 영향도 점수 계산
+        
+        Args:
+            news (Dict[str, Any]): 뉴스 정보
+            
+        Returns:
+            float: 영향도 점수
+        """
+        try:
+            # 감성 점수 (0 ~ 1)
+            sentiment_score = (news['sentiment']['polarity'] + 1) / 2
+            
+            # 키워드 중요도
+            keywords = {
+                'bitcoin': 1.0,
+                'ethereum': 0.8,
+                'regulation': 0.9,
+                'exchange': 0.7,
+                'price': 0.6
+            }
+            
+            keyword_score = 0
+            for keyword, weight in keywords.items():
+                if keyword in news['title'].lower():
+                    keyword_score += weight
+            
+            # 소스 신뢰도
+            source_credibility = {
+                'coindesk': 1.0,
+                'cointelegraph': 0.9,
+                'cryptonews': 0.8,
+                'bitcoinmagazine': 0.9
+            }
+            
+            # 최종 점수 계산
+            impact_score = (
+                sentiment_score * 0.4 +
+                keyword_score * 0.4 +
+                source_credibility[news['source']] * 0.2
+            )
+            
+            return min(max(impact_score, 0), 1)
+            
+        except Exception as e:
+            self.logger.error(f"영향도 점수 계산 중 오류 발생: {str(e)}")
+            return 0
+            
+    async def analyze_news(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        뉴스 분석
+        
+        Args:
+            symbol (str): 심볼
+            
+        Returns:
+            List[Dict[str, Any]]: 분석 결과
+        """
+        try:
+            all_news = []
+            
+            # 각 소스에서 뉴스 수집
+            for source in self.rss_feeds:
+                news_items = await self.fetch_news(source)
+                all_news.extend(news_items)
+            
+            # 뉴스 분석
+            analyzed_news = []
+            for news in all_news:
+                # 감성 분석
+                sentiment = await self.analyze_sentiment(news['title'])
+                news['sentiment'] = sentiment
+                
+                # 영향도 점수 계산
+                impact_score = self.calculate_impact_score(news)
+                news['impact_score'] = impact_score
+                
+                # 감성 분류
+                if sentiment['polarity'] > 0.2:
+                    news['sentiment_label'] = '긍정'
+                elif sentiment['polarity'] < -0.2:
+                    news['sentiment_label'] = '부정'
+                else:
+                    news['sentiment_label'] = '중립'
+                
+                # 영향도 분류
+                if impact_score > 0.7:
+                    news['impact_label'] = '높음'
+                elif impact_score > 0.4:
+                    news['impact_label'] = '중간'
+                else:
+                    news['impact_label'] = '낮음'
+                
+                analyzed_news.append(news)
+            
+            # 데이터베이스에 저장
+            await self.db.save_news(analyzed_news)
+            
+            return analyzed_news
+            
+        except Exception as e:
+            self.logger.error(f"뉴스 분석 중 오류 발생: {str(e)}")
+            return []
+            
+    async def get_recent_news(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        최근 뉴스 조회
+        
+        Args:
+            symbol (str): 심볼
+            limit (int): 조회할 뉴스 수
+            
+        Returns:
+            List[Dict[str, Any]]: 뉴스 목록
+        """
+        try:
+            return await self.db.get_recent_news(symbol, limit)
+            
+        except Exception as e:
+            self.logger.error(f"최근 뉴스 조회 중 오류 발생: {str(e)}")
+            return []
+            
+    async def get_news_summary(self, symbol: str) -> Dict[str, Any]:
+        """
+        뉴스 요약
+        
+        Args:
+            symbol (str): 심볼
+            
+        Returns:
+            Dict[str, Any]: 요약 정보
+        """
+        try:
+            recent_news = await self.get_recent_news(symbol)
+            
+            if not recent_news:
+                return {
+                    'total_news': 0,
+                    'positive_news': 0,
+                    'negative_news': 0,
+                    'average_impact': 0
+                }
+            
+            total_news = len(recent_news)
+            positive_news = sum(1 for news in recent_news if news['sentiment_label'] == '긍정')
+            negative_news = sum(1 for news in recent_news if news['sentiment_label'] == '부정')
+            average_impact = sum(news['impact_score'] for news in recent_news) / total_news
+            
+            return {
+                'total_news': total_news,
+                'positive_news': positive_news,
+                'negative_news': negative_news,
+                'average_impact': average_impact
+            }
+            
+        except Exception as e:
+            self.logger.error(f"뉴스 요약 생성 중 오류 발생: {str(e)}")
+            return {
+                'total_news': 0,
+                'positive_news': 0,
+                'negative_news': 0,
+                'average_impact': 0
+            }
 
 # 전역 뉴스 분석기 인스턴스
 db_manager = DatabaseManager()  # DatabaseManager 인스턴스 생성
