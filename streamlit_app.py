@@ -4,23 +4,15 @@
 
 import streamlit as st
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
 from datetime import datetime, timedelta
 import yaml
-import os
-import sys
-import threading
-import time
+import json
 from pathlib import Path
-from dotenv import load_dotenv
 import asyncio
-import nest_asyncio
-from typing import Dict, Any, List, Optional
-import numpy as np
-from plotly.subplots import make_subplots
-from src.bot.trading_bot import TradingBot
-from src.utils.database import DatabaseManager
-from src.utils.logger import TradeLogger
+from typing import Dict, List, Any, Optional
+
 from src.analysis.technical_analyzer import TechnicalAnalyzer
 from src.analysis.self_learning import SelfLearningSystem
 from src.strategy.portfolio_manager import PortfolioManager
@@ -32,8 +24,9 @@ from src.api.api_manager import APIManager
 from src.backup.backup_manager import BackupManager
 from src.optimization.optimizer import StrategyOptimizer, OptimizationResult
 from src.notification.telegram_notifier import telegram_notifier
-from src.notification.notification_manager import NotificationManager, NotificationRule
+from src.notification.notification_manager import NotificationManager
 from src.utils.performance_monitor import PerformanceMonitor, SystemMetrics
+from src.strategy.base_strategy import BaseStrategy
 
 # 페이지 설정은 반드시 다른 Streamlit 명령어보다 먼저 와야 함
 st.set_page_config(
