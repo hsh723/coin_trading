@@ -9,7 +9,9 @@ import os
 from pathlib import Path
 import logging
 from typing import Optional, Dict, Any, List
-from .logger import logger
+
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self, db_path: str = 'data/trading.db'):
@@ -180,7 +182,7 @@ class DatabaseManager:
                 } for trade in trades]
                 
         except Exception as e:
-            self.logger.error(f"거래 내역 조회 실패: {str(e)}")
+            logger.error(f"거래 내역 조회 실패: {str(e)}")
             return []
     
     def get_performance(self, start_date: Optional[datetime] = None,
