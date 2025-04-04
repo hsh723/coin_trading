@@ -34,7 +34,8 @@ st.set_page_config(
 )
 
 # 프로젝트 루트 경로를 시스템 경로에 추가
-sys.path.insert(0, str(Path(__file__).parent))
+root_path = Path(__file__).parent.absolute()
+sys.path.insert(0, str(root_path))
 
 # 그 후 모듈 임포트
 from src.bot.trading_bot import TradingBot

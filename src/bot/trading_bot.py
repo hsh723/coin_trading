@@ -12,25 +12,47 @@ from typing import Dict, Any, List, Optional
 import json
 import time
 from abc import ABC, abstractmethod
-from src.exchange.binance_exchange import BinanceExchange
-from ..analysis.news_analyzer import NewsAnalyzer
-from ..analysis.technical_analyzer import TechnicalAnalyzer
-from ..strategy.integrated_strategy import IntegratedStrategy
-from ..risk.risk_manager import RiskManager
-from ..database.database import Database
-from ..utils.logger import setup_logger
-from ..utils.database import DatabaseManager
-from ..utils.telegram import TelegramNotifier
 
 # 프로젝트 루트 경로를 시스템 경로에 추가
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+root_path = Path(__file__).parent.parent.parent.absolute()
+sys.path.insert(0, str(root_path))
 
 # 지연 임포트 적용
 def get_exchange():
+    from src.exchange.binance_exchange import BinanceExchange
     return BinanceExchange()
 
 def get_logger():
+    from src.utils.logger import setup_logger
     return setup_logger('trading_bot')
+
+def get_news_analyzer():
+    from src.analysis.news_analyzer import NewsAnalyzer
+    return NewsAnalyzer()
+
+def get_technical_analyzer():
+    from src.analysis.technical_analyzer import TechnicalAnalyzer
+    return TechnicalAnalyzer()
+
+def get_integrated_strategy():
+    from src.strategy.integrated_strategy import IntegratedStrategy
+    return IntegratedStrategy()
+
+def get_risk_manager():
+    from src.risk.risk_manager import RiskManager
+    return RiskManager()
+
+def get_database():
+    from src.database.database import Database
+    return Database()
+
+def get_database_manager():
+    from src.utils.database import DatabaseManager
+    return DatabaseManager()
+
+def get_telegram_notifier():
+    from src.utils.telegram import TelegramNotifier
+    return TelegramNotifier()
 
 class TradingBot(ABC):
     """트레이딩 봇 기본 클래스"""
@@ -44,18 +66,16 @@ class TradingBot(ABC):
         """
         self.config = config
         self.logger = get_logger()
-        self.database = DatabaseManager()
+        self.database = get_database_manager()
         self.exchange = get_exchange()
-        self.strategy = IntegratedStrategy(db=self.database)
-        self.risk_manager = RiskManager(
-            initial_capital=config.get('initial_capital', 10000.0)
-        )
+        self.strategy = get_integrated_strategy()
+        self.risk_manager = get_risk_manager()
         
         # 텔레그램 알림 설정
         bot_token = config.get('telegram_bot_token')
         chat_id = config.get('telegram_chat_id')
         if bot_token and chat_id:
-            self.telegram = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+            self.telegram = get_telegram_notifier()
         else:
             self.telegram = None
             self.logger.warning("텔레그램 설정이 없습니다. 알림이 비활성화됩니다.")
