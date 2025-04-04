@@ -9,6 +9,44 @@ from typing import Dict, Any, Optional
 import json
 from ..utils.database import DatabaseManager
 
+def setup_logger(name: str) -> logging.Logger:
+    """
+    로거 설정
+    
+    Args:
+        name (str): 로거 이름
+        
+    Returns:
+        logging.Logger: 설정된 로거 객체
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    
+    # 로그 디렉토리 생성
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    # 파일 핸들러 설정
+    log_file = os.path.join(log_dir, f'{name}_{datetime.now().strftime("%Y%m%d")}.log')
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    
+    # 콘솔 핸들러 설정
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # 포맷터 설정
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # 핸들러 추가
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
 class TradeLogger:
     """거래 로깅 클래스"""
     
@@ -20,35 +58,8 @@ class TradeLogger:
             db (DatabaseManager): 데이터베이스 관리자
         """
         self.db = db
-        self.logger = logging.getLogger(__name__)
+        self.logger = setup_logger(__name__)
         
-        # 로그 디렉토리 설정
-        self.log_dir = 'logs'
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
-            
-    def setup_logger(self):
-        """로거 설정"""
-        try:
-            # 로그 파일 경로
-            log_file = os.path.join(
-                self.log_dir,
-                f'trade_{datetime.now().strftime("%Y%m%d")}.log'
-            )
-            
-            # 로거 설정
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
-            
-        except Exception as e:
-            print(f"로거 설정 실패: {str(e)}")
-            
     async def log_trade_entry(self, trade: Dict[str, Any]):
         """
         거래 진입 로깅

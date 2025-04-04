@@ -37,6 +37,31 @@ st.set_page_config(
 root_path = Path(__file__).parent.absolute()
 sys.path.insert(0, str(root_path))
 
+# 지연 임포트 적용
+def get_trading_bot():
+    from src.bot.trading_bot import TradingBot
+    return TradingBot()
+
+def get_exchange():
+    from src.exchange.binance_exchange import BinanceExchange
+    return BinanceExchange()
+
+def get_database_manager():
+    from src.database.database_manager import DatabaseManager
+    return DatabaseManager()
+
+def get_logger():
+    from src.utils.logger import setup_logger
+    return setup_logger('streamlit_app')
+
+def get_technical_analyzer():
+    from src.analysis.technical_analyzer import TechnicalAnalyzer
+    return TechnicalAnalyzer()
+
+def get_self_learning_system():
+    from src.analysis.self_learning import SelfLearningSystem
+    return SelfLearningSystem()
+
 # 그 후 모듈 임포트
 from src.bot.trading_bot import TradingBot
 from src.exchange.binance_exchange import BinanceExchange
