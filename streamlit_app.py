@@ -345,11 +345,10 @@ def render_trade_history(trades: list):
     df['exit_time'] = pd.to_datetime(df['exit_time'])
     df['duration'] = (df['exit_time'] - df['entry_time']).dt.total_seconds() / 3600
     
-    st.dataframe(
-        df[['symbol', 'side', 'entry_price', 'exit_price', 'amount', 
-            'pnl', 'entry_time', 'exit_time', 'duration']],
-        use_container_width=True
-    )
+    # DataFrame을 전치할 때 transpose() 메서드 사용
+    display_df = df[['symbol', 'side', 'entry_price', 'exit_price', 'amount', 
+                     'pnl', 'entry_time', 'exit_time', 'duration']].copy()
+    st.dataframe(display_df, use_container_width=True)
 
 def render_position_info(positions: list):
     """포지션 정보 렌더링"""
