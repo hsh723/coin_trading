@@ -6,7 +6,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
-import talib
+import ta
 from datetime import datetime, timedelta
 from functools import lru_cache
 import time
@@ -163,7 +163,7 @@ class TechnicalAnalyzer:
         Returns:
             pd.Series: 이동평균
         """
-        return talib.SMA(data, timeperiod=period)
+        return ta.trend.sma_indicator(data, window=period)
         
     @lru_cache(maxsize=100)
     def _calculate_ema(self, data: pd.Series, period: int) -> pd.Series:
@@ -177,7 +177,7 @@ class TechnicalAnalyzer:
         Returns:
             pd.Series: 지수 이동평균
         """
-        return talib.EMA(data, timeperiod=period)
+        return ta.trend.ema_indicator(data, window=period)
         
     @lru_cache(maxsize=100)
     def _calculate_macd(self, data: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
@@ -190,8 +190,8 @@ class TechnicalAnalyzer:
         Returns:
             Tuple[pd.Series, pd.Series, pd.Series]: MACD, 시그널, 히스토그램
         """
-        macd, signal, hist = talib.MACD(data)
-        return macd, signal, hist
+        macd = ta.trend.MACD(data)
+        return macd.macd(), macd.macd_signal(), macd.macd_diff()
         
     @lru_cache(maxsize=100)
     def _calculate_rsi(self, data: pd.Series, period: int = 14) -> pd.Series:
@@ -205,7 +205,7 @@ class TechnicalAnalyzer:
         Returns:
             pd.Series: RSI
         """
-        return talib.RSI(data, timeperiod=period)
+        return ta.momentum.rsi(data, window=period)
         
     @lru_cache(maxsize=100)
     def _calculate_bollinger_bands(self,
@@ -223,8 +223,8 @@ class TechnicalAnalyzer:
         Returns:
             Tuple[pd.Series, pd.Series, pd.Series]: 상단, 중간, 하단 밴드
         """
-        upper, middle, lower = talib.BBANDS(data, timeperiod=period, nbdevup=std_dev, nbdevdn=std_dev)
-        return upper, middle, lower
+        bb = ta.volatility.BollingerBands(data, window=period, window_dev=std_dev)
+        return bb.bollinger_hband(), bb.bollinger_mavg(), bb.bollinger_lband()
         
     @lru_cache(maxsize=100)
     def _calculate_stochastic(self,
@@ -246,8 +246,8 @@ class TechnicalAnalyzer:
         Returns:
             Tuple[pd.Series, pd.Series]: %K, %D
         """
-        k, d = talib.STOCH(high, low, close, fastk_period=k_period, slowk_period=d_period)
-        return k, d
+        stoch = ta.momentum.StochasticOscillator(high, low, close, window=k_period, smooth_window=d_period)
+        return stoch.stoch(), stoch.stoch_signal()
         
     def get_support_resistance(self,
                              symbol: str,
