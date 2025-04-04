@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from dotenv import load_dotenv
 import asyncio
+import nest_asyncio
 from typing import Dict, Any, List, Optional
 import numpy as np
 from plotly.subplots import make_subplots
@@ -110,6 +111,19 @@ st.markdown("""
 
 # 로거 설정
 logger = setup_logger('streamlit_app')
+
+# 이벤트 루프 관리를 위한 유틸리티
+def get_or_create_eventloop():
+    """이벤트 루프 가져오기 또는 생성"""
+    try:
+        return asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
+
+# 중첩 이벤트 루프 허용 (Streamlit 환경에서 필요)
+nest_asyncio.apply()
 
 def init_session_state():
     """세션 상태 초기화"""
@@ -435,15 +449,40 @@ async def update_performance_report():
     except Exception as e:
         logger.error(f"성과 리포트 업데이트 실패: {str(e)}")
 
-async def stop_bot():
-    """봇 중지"""
+async def start_bot_async():
+    """봇 시작 비동기 함수"""
+    try:
+        if st.session_state.bot:
+            await st.session_state.bot.start()
+            st.success("봇이 시작되었습니다.")
+            return True
+        return False
+    except Exception as e:
+        st.error(f"봇 시작 실패: {str(e)}")
+        return False
+
+def start_bot():
+    """봇 시작 함수 (동기식 래퍼)"""
+    loop = get_or_create_eventloop()
+    return loop.run_until_complete(start_bot_async())
+
+async def stop_bot_async():
+    """봇 중지 비동기 함수"""
     try:
         if st.session_state.bot and st.session_state.bot.is_running:
             await st.session_state.bot.stop()
             st.session_state.bot = None
             st.success("봇이 중지되었습니다.")
+            return True
+        return False
     except Exception as e:
         st.error(f"봇 중지 실패: {str(e)}")
+        return False
+
+def stop_bot():
+    """봇 중지 함수 (동기식 래퍼)"""
+    loop = get_or_create_eventloop()
+    return loop.run_until_complete(stop_bot_async())
 
 def save_api_keys(api_key: str, api_secret: str):
     """API 키를 .env 파일에 저장"""
@@ -532,7 +571,9 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("봇 시작"):
-                if not st.session_state.bot:
+                if not api_key or not api_secret:
+                    st.error("API 키와 시크릿을 입력해주세요.")
+                else:
                     config = {
                         'api_key': api_key,
                         'api_secret': api_secret,
@@ -542,33 +583,11 @@ def main():
                         'testnet': True
                     }
                     st.session_state.bot = TradingBot(config)
-                    
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        success = loop.run_until_complete(st.session_state.bot.start())
-                        if success:
-                            st.success("트레이딩 봇이 시작되었습니다.")
-                        else:
-                            st.error("봇 시작에 실패했습니다.")
-                            st.session_state.bot = None
-                    except Exception as e:
-                        st.error(f"봇 시작 중 오류 발생: {str(e)}")
-                        st.session_state.bot = None
-                    finally:
-                        loop.close()
+                    start_bot()
         
         with col2:
             if st.button("봇 중지"):
-                if st.session_state.bot:
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(stop_bot())
-                    except Exception as e:
-                        st.error(f"봇 중지 중 오류 발생: {str(e)}")
-                    finally:
-                        loop.close()
+                stop_bot()
     
     # 메인 콘텐츠
     tab1, tab2, tab3, tab4 = st.tabs(["차트", "성과", "포지션", "거래 내역"])

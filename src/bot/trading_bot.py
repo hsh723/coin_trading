@@ -100,35 +100,47 @@ class TradingBot(ABC):
         self.database.save_log('INFO', '트레이딩 봇 중지', 'trading_bot')
         
     async def _run_loop(self) -> None:
-        """메인 트레이딩 루프"""
-        while self.is_running:
-            try:
-                # 시장 데이터 업데이트
-                await self._update_market_data()
+        """트레이딩 루프 실행"""
+        try:
+            while self.is_running:
+                try:
+                    # 시장 데이터 업데이트
+                    await self._update_market_data()
+                    
+                    # 포지션 업데이트
+                    await self._update_positions()
+                    
+                    # 거래 신호 생성
+                    signal = await self.strategy.generate_signal(self.market_data)
+                    
+                    # 리스크 관리
+                    if signal:
+                        await self.risk_manager.evaluate_signal(signal)
+                    
+                    # 거래 실행
+                    if signal and self.risk_manager.should_execute(signal):
+                        await self._execute_trade(signal)
+                    
+                    # 성과 분석
+                    await self._update_performance()
+                    
+                    # 로깅
+                    self.logger.info(f"트레이딩 루프 실행 완료: {datetime.now()}")
+                    
+                except Exception as e:
+                    self.logger.error(f"트레이딩 루프 실행 중 오류: {str(e)}")
                 
-                # 거래 가능 여부 확인
-                if not self.risk_manager.can_trade():
-                    self.logger.warning("거래 불가능 상태")
-                    await asyncio.sleep(60)
-                    continue
-                
-                # 거래 신호 생성
-                signal = self.strategy.generate_signal(self.market_data)
-                
-                # 포지션 관리
-                if signal and signal['signal'] != 'neutral':
-                    await self._manage_position(signal)
-                
-                # 대기
+                # 인터벌 대기
                 await asyncio.sleep(self.config.get('interval', 60))
                 
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                error_msg = f"트레이딩 루프 오류: {str(e)}"
-                self.logger.error(error_msg)
-                self.database.save_log('ERROR', error_msg, 'trading_bot')
-                await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            # 정상적인 취소 처리
+            self.logger.info("트레이딩 루프가 취소되었습니다.")
+        except Exception as e:
+            self.logger.error(f"트레이딩 루프 오류: {str(e)}")
+        finally:
+            self.is_running = False
+            self.logger.info("트레이딩 루프가 종료되었습니다.")
             
     async def _update_market_data(self) -> None:
         """시장 데이터 업데이트"""
