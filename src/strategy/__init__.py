@@ -3,5 +3,6 @@
 """
 
 from .portfolio_manager import PortfolioManager
+from .integrated_strategy import IntegratedStrategy
 
-__all__ = ['PortfolioManager'] 
+__all__ = ['PortfolioManager', 'IntegratedStrategy'] 
