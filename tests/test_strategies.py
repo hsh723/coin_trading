@@ -5,9 +5,9 @@
 import pytest
 import pandas as pd
 import numpy as np
-from src.strategies.base import BaseStrategy
+from src.strategy.base_strategy import BaseStrategy
 from src.strategy.momentum import MomentumStrategy
-from src.strategies.mean_reversion import MeanReversionStrategy
+from src.strategy.mean_reversion import MeanReversionStrategy
 from src.strategies.breakout import BreakoutStrategy
 from src.analysis.indicators.technical import TechnicalIndicators
 
