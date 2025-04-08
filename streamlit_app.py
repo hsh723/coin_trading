@@ -14,6 +14,7 @@ import asyncio
 from typing import Dict, List, Any, Optional
 import sys
 from dotenv import load_dotenv
+import nest_asyncio
 
 from src.analysis.technical_analyzer import TechnicalAnalyzer
 from src.analysis.self_learning import SelfLearningSystem
