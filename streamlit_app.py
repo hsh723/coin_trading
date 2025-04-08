@@ -16,6 +16,7 @@ import sys
 from dotenv import load_dotenv
 import nest_asyncio
 import os
+import numpy as np
 
 from src.analysis.technical_analyzer import TechnicalAnalyzer
 from src.analysis.self_learning import SelfLearningSystem
