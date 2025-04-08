@@ -9,8 +9,9 @@ from dataclasses import dataclass
 import logging
 from datetime import datetime, timedelta
 from ..utils.database import DatabaseManager
+from src.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 @dataclass
 class RiskMetrics:
@@ -50,7 +51,10 @@ class RiskManager:
         max_drawdown: float = 0.2,       # 최대 허용 낙폭
         risk_per_trade: float = 0.01,    # 거래당 리스크
         correlation_threshold: float = 0.7,  # 상관관계 임계값
-        volatility_threshold: float = 0.05   # 변동성 임계값
+        volatility_threshold: float = 0.05,   # 변동성 임계값
+        stop_loss: float = 0.02,
+        take_profit: float = 0.03,
+        trailing_stop: float = 0.015
     ):
         """
         초기화
@@ -63,6 +67,9 @@ class RiskManager:
             risk_per_trade: 거래당 리스크 비율
             correlation_threshold: 상관관계 임계값
             volatility_threshold: 변동성 임계값
+            stop_loss: 손절 비율
+            take_profit: 익절 비율
+            trailing_stop: 트레일링 스탑 비율
         """
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -87,8 +94,9 @@ class RiskManager:
         
         # 리스크 파라미터
         self.max_position_size = 0.05  # 초기 자본의 5%
-        self.stop_loss = 0.02  # 2%
-        self.take_profit = 0.04  # 4%
+        self.stop_loss = stop_loss
+        self.take_profit = take_profit
+        self.trailing_stop = trailing_stop
         self.daily_loss_limit = 0.05  # 5%
         
     def calculate_position_size(

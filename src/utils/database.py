@@ -18,356 +18,248 @@ class DatabaseManager:
         """데이터베이스 관리자 초기화"""
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize_database()
+        self.conn = None
+        self._init_database()
     
-    def _initialize_database(self):
+    def _init_database(self):
         """데이터베이스 초기화"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                # 거래 테이블 생성
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS trades (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp DATETIME NOT NULL,
-                        symbol TEXT NOT NULL,
-                        type TEXT NOT NULL,
-                        side TEXT NOT NULL,
-                        price REAL NOT NULL,
-                        amount REAL NOT NULL,
-                        cost REAL NOT NULL,
-                        fee REAL NOT NULL,
-                        pnl REAL
-                    )
-                ''')
-                
-                # 성과 테이블 생성
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS performance (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date DATE NOT NULL,
-                        daily_return REAL,
-                        weekly_return REAL,
-                        monthly_return REAL,
-                        total_trades INTEGER,
-                        total_pnl REAL
-                    )
-                ''')
-                
-                # 사용자 테이블 생성
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT UNIQUE NOT NULL,
-                        password TEXT NOT NULL,
-                        role TEXT NOT NULL,
-                        created_at DATETIME NOT NULL,
-                        last_login DATETIME,
-                        is_active BOOLEAN DEFAULT 1
-                    )
-                ''')
-                
-                # 사용자 세션 테이블 생성
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS user_sessions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        token TEXT NOT NULL,
-                        created_at DATETIME NOT NULL,
-                        expires_at DATETIME NOT NULL,
-                        last_activity DATETIME NOT NULL,
-                        FOREIGN KEY (user_id) REFERENCES users (id)
-                    )
-                ''')
-                
-                # 로그 테이블 생성
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS logs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        level TEXT NOT NULL,
-                        message TEXT NOT NULL,
-                        source TEXT NOT NULL,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                
-                conn.commit()
-                logger.info("데이터베이스 초기화 완료")
-                
-        except Exception as e:
-            logger.error(f"데이터베이스 초기화 실패: {str(e)}")
+            self.conn = sqlite3.connect(self.db_path)
+            cursor = self.conn.cursor()
+            
+            # 거래 내역 테이블
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    price REAL NOT NULL,
+                    commission REAL DEFAULT 0.0,
+                    pnl REAL DEFAULT 0.0
+                )
+            """)
+            
+            # 포지션 테이블
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS positions (
+                    symbol TEXT PRIMARY KEY,
+                    quantity REAL NOT NULL,
+                    entry_price REAL NOT NULL,
+                    current_price REAL NOT NULL,
+                    unrealized_pnl REAL DEFAULT 0.0,
+                    last_update DATETIME NOT NULL
+                )
+            """)
+            
+            # 계좌 잔고 테이블
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS balance (
+                    timestamp DATETIME PRIMARY KEY,
+                    total_balance REAL NOT NULL,
+                    available_balance REAL NOT NULL,
+                    locked_balance REAL NOT NULL
+                )
+            """)
+            
+            # 성과 지표 테이블
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS performance (
+                    timestamp DATETIME PRIMARY KEY,
+                    total_pnl REAL NOT NULL,
+                    win_rate REAL NOT NULL,
+                    profit_factor REAL NOT NULL,
+                    sharpe_ratio REAL NOT NULL,
+                    max_drawdown REAL NOT NULL
+                )
+            """)
+            
+            self.conn.commit()
+            logger.info("데이터베이스 초기화 완료")
+            
+        except sqlite3.Error as e:
+            logger.error(f"데이터베이스 초기화 실패: {e}")
             raise
     
-    def save_trade(self, trade_data: Dict[str, Any]) -> bool:
-        """거래 정보 저장"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    INSERT INTO trades (
-                        timestamp, symbol, type, side,
-                        price, amount, cost, fee, pnl
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    trade_data['timestamp'],
-                    trade_data['symbol'],
-                    trade_data['type'],
-                    trade_data['side'],
-                    trade_data['price'],
-                    trade_data['amount'],
-                    trade_data['cost'],
-                    trade_data['fee'],
-                    trade_data.get('pnl')
-                ))
-                conn.commit()
-                logger.info(f"거래 정보 저장 완료: {trade_data['symbol']}")
-                return True
-        except Exception as e:
-            logger.error(f"거래 정보 저장 실패: {str(e)}")
-            return False
+    def close(self):
+        """연결 종료"""
+        if self.conn:
+            self.conn.close()
     
-    def save_performance(self, performance_data: Dict[str, Any]) -> bool:
-        """성과 정보 저장"""
+    def insert_trade(self, trade_data: Dict):
+        """거래 내역 추가"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    INSERT INTO performance (
-                        date, daily_return, weekly_return,
-                        monthly_return, total_trades, total_pnl
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                ''', (
-                    performance_data['date'],
-                    performance_data['daily_return'],
-                    performance_data['weekly_return'],
-                    performance_data['monthly_return'],
-                    performance_data['total_trades'],
-                    performance_data['total_pnl']
-                ))
-                conn.commit()
-                logger.info(f"성과 정보 저장 완료: {performance_data['date']}")
-                return True
-        except Exception as e:
-            logger.error(f"성과 정보 저장 실패: {str(e)}")
-            return False
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT INTO trades (
+                    timestamp, symbol, side, quantity, 
+                    price, commission, pnl
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                trade_data['timestamp'],
+                trade_data['symbol'],
+                trade_data['side'],
+                trade_data['quantity'],
+                trade_data['price'],
+                trade_data.get('commission', 0.0),
+                trade_data.get('pnl', 0.0)
+            ))
+            self.conn.commit()
+            
+        except sqlite3.Error as e:
+            logger.error(f"거래 내역 추가 실패: {e}")
+            raise
     
-    def get_trades(self, symbol: str) -> List[Dict[str, Any]]:
+    def update_position(self, position_data: Dict):
+        """포지션 업데이트"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO positions (
+                    symbol, quantity, entry_price, 
+                    current_price, unrealized_pnl, last_update
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                position_data['symbol'],
+                position_data['quantity'],
+                position_data['entry_price'],
+                position_data['current_price'],
+                position_data.get('unrealized_pnl', 0.0),
+                position_data['last_update']
+            ))
+            self.conn.commit()
+            
+        except sqlite3.Error as e:
+            logger.error(f"포지션 업데이트 실패: {e}")
+            raise
+    
+    def update_balance(self, balance_data: Dict):
+        """잔고 업데이트"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO balance (
+                    timestamp, total_balance, 
+                    available_balance, locked_balance
+                ) VALUES (?, ?, ?, ?)
+            """, (
+                balance_data['timestamp'],
+                balance_data['total_balance'],
+                balance_data['available_balance'],
+                balance_data['locked_balance']
+            ))
+            self.conn.commit()
+            
+        except sqlite3.Error as e:
+            logger.error(f"잔고 업데이트 실패: {e}")
+            raise
+    
+    def update_performance(self, performance_data: Dict):
+        """성과 지표 업데이트"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO performance (
+                    timestamp, total_pnl, win_rate,
+                    profit_factor, sharpe_ratio, max_drawdown
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                performance_data['timestamp'],
+                performance_data['total_pnl'],
+                performance_data['win_rate'],
+                performance_data['profit_factor'],
+                performance_data['sharpe_ratio'],
+                performance_data['max_drawdown']
+            ))
+            self.conn.commit()
+            
+        except sqlite3.Error as e:
+            logger.error(f"성과 지표 업데이트 실패: {e}")
+            raise
+    
+    def get_trades(self, 
+                  symbol: Optional[str] = None, 
+                  start_time: Optional[str] = None,
+                  end_time: Optional[str] = None) -> pd.DataFrame:
         """거래 내역 조회"""
-        try:
-            query = """
-                SELECT 
-                    t.id,
-                    t.symbol,
-                    t.side,
-                    t.price,
-                    t.size,
-                    t.pnl,
-                    t.timestamp
-                FROM trades t
-                WHERE t.symbol = ?
-                ORDER BY t.timestamp DESC
-                LIMIT 100
-            """
-            
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, (symbol,))
-                trades = cursor.fetchall()
-                
-                return [{
-                    'id': trade[0],
-                    'symbol': trade[1],
-                    'side': trade[2],
-                    'price': float(trade[3]),
-                    'size': float(trade[4]),
-                    'pnl': float(trade[5]) if trade[5] is not None else 0.0,
-                    'timestamp': trade[6]
-                } for trade in trades]
-                
-        except Exception as e:
-            logger.error(f"거래 내역 조회 실패: {str(e)}")
-            return []
-    
-    def get_performance(self, start_date: Optional[datetime] = None,
-                       end_date: Optional[datetime] = None) -> pd.DataFrame:
-        """성과 정보 조회"""
-        try:
-            query = "SELECT * FROM performance"
-            params = []
-            
-            if start_date and end_date:
-                query += " WHERE date BETWEEN ? AND ?"
-                params.extend([start_date, end_date])
-            elif start_date:
-                query += " WHERE date >= ?"
-                params.append(start_date)
-            elif end_date:
-                query += " WHERE date <= ?"
-                params.append(end_date)
-            
-            query += " ORDER BY date DESC"
-            
-            with sqlite3.connect(self.db_path) as conn:
-                df = pd.read_sql_query(query, conn, params=params)
-                return df
-        except Exception as e:
-            logger.error(f"성과 정보 조회 실패: {str(e)}")
-            return pd.DataFrame()
-    
-    def get_user(self, username: str) -> Optional[Dict[str, Any]]:
-        """사용자 정보 조회"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE username = ?",
-                    (username,)
-                )
-                row = cursor.fetchone()
-                if row:
-                    return {
-                        'id': row[0],
-                        'username': row[1],
-                        'password': row[2],
-                        'role': row[3],
-                        'created_at': row[4],
-                        'last_login': row[5],
-                        'is_active': row[6]
-                    }
-                return None
-        except Exception as e:
-            logger.error(f"사용자 정보 조회 실패: {str(e)}")
-            return None
-    
-    def save_user(self, user_data: Dict[str, Any]) -> bool:
-        """사용자 정보 저장"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    INSERT INTO users (
-                        username, password, role,
-                        created_at, last_login
-                    ) VALUES (?, ?, ?, ?, ?)
-                ''', (
-                    user_data['username'],
-                    user_data['password'],
-                    user_data['role'],
-                    user_data['created_at'],
-                    user_data.get('last_login')
-                ))
-                conn.commit()
-                logger.info(f"사용자 정보 저장 완료: {user_data['username']}")
-                return True
-        except Exception as e:
-            logger.error(f"사용자 정보 저장 실패: {str(e)}")
-            return False
-    
-    def update_user_last_login(self, username: str) -> bool:
-        """사용자 마지막 로그인 시간 업데이트"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    UPDATE users
-                    SET last_login = ?
-                    WHERE username = ?
-                ''', (datetime.now(), username))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"사용자 로그인 시간 업데이트 실패: {str(e)}")
-            return False
-    
-    def save_session(self, user_id: int, token: str,
-                    expires_at: datetime) -> bool:
-        """사용자 세션 저장"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    INSERT INTO user_sessions (
-                        user_id, token, created_at,
-                        expires_at, last_activity
-                    ) VALUES (?, ?, ?, ?, ?)
-                ''', (
-                    user_id,
-                    token,
-                    datetime.now(),
-                    expires_at,
-                    datetime.now()
-                ))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"세션 저장 실패: {str(e)}")
-            return False
-    
-    def get_session(self, token: str) -> Optional[Dict[str, Any]]:
-        """세션 정보 조회"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM user_sessions WHERE token = ?",
-                    (token,)
-                )
-                row = cursor.fetchone()
-                if row:
-                    return {
-                        'id': row[0],
-                        'user_id': row[1],
-                        'token': row[2],
-                        'created_at': row[3],
-                        'expires_at': row[4],
-                        'last_activity': row[5]
-                    }
-                return None
-        except Exception as e:
-            logger.error(f"세션 정보 조회 실패: {str(e)}")
-            return None
-    
-    def update_session_activity(self, token: str) -> bool:
-        """세션 활동 시간 업데이트"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    UPDATE user_sessions
-                    SET last_activity = ?
-                    WHERE token = ?
-                ''', (datetime.now(), token))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"세션 활동 시간 업데이트 실패: {str(e)}")
-            return False
-    
-    def delete_expired_sessions(self) -> bool:
-        """만료된 세션 삭제"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('''
-                    DELETE FROM user_sessions
-                    WHERE expires_at < ?
-                ''', (datetime.now(),))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"만료된 세션 삭제 실패: {str(e)}")
-            return False
-    
-    def save_log(self, level: str, message: str, source: str) -> None:
-        """
-        로그 저장
+        query = "SELECT * FROM trades WHERE 1=1"
+        params = []
         
-        Args:
-            level (str): 로그 레벨
-            message (str): 로그 메시지
-            source (str): 로그 소스
-        """
+        if symbol:
+            query += " AND symbol = ?"
+            params.append(symbol)
+            
+        if start_time:
+            query += " AND timestamp >= ?"
+            params.append(start_time)
+            
+        if end_time:
+            query += " AND timestamp <= ?"
+            params.append(end_time)
+            
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO logs (level, message, source)
-                    VALUES (?, ?, ?)
-                ''', (level, message, source))
-                conn.commit()
-                
-        except Exception as e:
-            logger.error(f"로그 저장 실패: {str(e)}")
+            return pd.read_sql_query(query, self.conn, params=params)
+        except pd.io.sql.DatabaseError as e:
+            logger.error(f"거래 내역 조회 실패: {e}")
+            return pd.DataFrame()
+            
+    def get_positions(self, symbol: Optional[str] = None) -> pd.DataFrame:
+        """포지션 조회"""
+        query = "SELECT * FROM positions"
+        params = None
+        
+        if symbol:
+            query += " WHERE symbol = ?"
+            params = [symbol]
+            
+        try:
+            return pd.read_sql_query(query, self.conn, params=params)
+        except pd.io.sql.DatabaseError as e:
+            logger.error(f"포지션 조회 실패: {e}")
+            return pd.DataFrame()
+            
+    def get_balance_history(self, 
+                          start_time: Optional[str] = None,
+                          end_time: Optional[str] = None) -> pd.DataFrame:
+        """잔고 내역 조회"""
+        query = "SELECT * FROM balance WHERE 1=1"
+        params = []
+        
+        if start_time:
+            query += " AND timestamp >= ?"
+            params.append(start_time)
+            
+        if end_time:
+            query += " AND timestamp <= ?"
+            params.append(end_time)
+            
+        try:
+            return pd.read_sql_query(query, self.conn, params=params)
+        except pd.io.sql.DatabaseError as e:
+            logger.error(f"잔고 내역 조회 실패: {e}")
+            return pd.DataFrame()
+            
+    def get_performance_history(self,
+                              start_time: Optional[str] = None,
+                              end_time: Optional[str] = None) -> pd.DataFrame:
+        """성과 지표 내역 조회"""
+        query = "SELECT * FROM performance WHERE 1=1"
+        params = []
+        
+        if start_time:
+            query += " AND timestamp >= ?"
+            params.append(start_time)
+            
+        if end_time:
+            query += " AND timestamp <= ?"
+            params.append(end_time)
+            
+        try:
+            return pd.read_sql_query(query, self.conn, params=params)
+        except pd.io.sql.DatabaseError as e:
+            logger.error(f"성과 지표 내역 조회 실패: {e}")
+            return pd.DataFrame()
 
 # 전역 데이터베이스 관리자 인스턴스
 db_manager = DatabaseManager() 

@@ -5,12 +5,57 @@
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from src.utils.logger import setup_logger
 from src.indicators.basic import TechnicalIndicators
+from enum import Enum
+from dataclasses import dataclass
 
 logger = setup_logger()
+
+class TrendType(Enum):
+    """추세 유형"""
+    UPTREND = "UPTREND"
+    DOWNTREND = "DOWNTREND"
+    SIDEWAYS = "SIDEWAYS"
+    
+@dataclass
+class TrendInfo:
+    """추세 정보"""
+    type: TrendType
+    strength: float
+    start_price: float
+    current_price: float
+    duration: int
+    
+@dataclass
+class FibonacciLevels:
+    """피보나치 레벨"""
+    level_0: float
+    level_236: float
+    level_382: float
+    level_500: float
+    level_618: float
+    level_786: float
+    level_1000: float
+    
+@dataclass
+class StochasticSignal:
+    """스토캐스틱 신호"""
+    k_value: float
+    d_value: float
+    is_overbought: bool
+    is_oversold: bool
+    
+@dataclass
+class TrendlineInfo:
+    """추세선 정보"""
+    slope: float
+    intercept: float
+    r_squared: float
+    support_points: List[float]
+    resistance_points: List[float]
 
 class BaseStrategy(ABC):
     """
@@ -24,6 +69,7 @@ class BaseStrategy(ABC):
         """
         self.logger = logger
         self.indicators = TechnicalIndicators()
+        self.name = self.__class__.__name__
         
     @abstractmethod
     async def generate_signal(
@@ -338,3 +384,32 @@ class BaseStrategy(ABC):
         except Exception as e:
             self.logger.error(f"포지션 종료 여부 확인 실패: {str(e)}")
             return False
+
+    def calculate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        거래 신호 계산
+        
+        Args:
+            data: OHLCV 데이터
+            
+        Returns:
+            pd.DataFrame: 신호 데이터
+        """
+        raise NotImplementedError
+        
+    def execute_trade(self, 
+                     data: pd.DataFrame,
+                     position: Optional[float] = None,
+                     balance: float = 0.0) -> Dict[str, float]:
+        """
+        거래 실행
+        
+        Args:
+            data: OHLCV 데이터
+            position: 현재 포지션
+            balance: 현재 잔고
+            
+        Returns:
+            Dict[str, float]: 거래 결과
+        """
+        raise NotImplementedError

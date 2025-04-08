@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 import json
 import os
-from ..strategies.base import Strategy
+from ..strategy.base_strategy import BaseStrategy as Strategy
 from ..utils.logger import setup_logger
 from ..strategies.integrated_strategy import IntegratedStrategy
 from ..trading.risk_manager import RiskManager

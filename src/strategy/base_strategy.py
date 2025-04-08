@@ -7,16 +7,21 @@ from abc import ABC, abstractmethod
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+import pandas as pd
 
 class BaseStrategy(ABC):
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         기본 전략 초기화
         
         Args:
-            config (Dict[str, Any]): 전략 설정
+            config (Optional[Dict[str, Any]], optional): 전략 설정. Defaults to None.
         """
-        self.config = config
+        self.config = config or {
+            "name": self.__class__.__name__,
+            "version": "1.0.0",
+            "parameters": {}
+        }
         self.logger = logging.getLogger(__name__)
         self._setup_logging()
         
@@ -24,78 +29,76 @@ class BaseStrategy(ABC):
         """로깅 설정"""
         self.logger.setLevel(logging.INFO)
         
-    @abstractmethod
-    def initialize(self) -> None:
-        """전략 초기화"""
-        pass
-        
-    @abstractmethod
-    def analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_data(self, data: pd.DataFrame) -> None:
         """
-        데이터 분석
+        데이터 유효성 검사
         
         Args:
-            data (Dict[str, Any]): 분석할 데이터
+            data (pd.DataFrame): 검증할 데이터
             
-        Returns:
-            Dict[str, Any]: 분석 결과
+        Raises:
+            ValueError: 데이터가 비어있거나 필수 컬럼이 없는 경우
         """
+        if data.empty:
+            raise ValueError("데이터가 비어있습니다.")
+            
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"필수 컬럼이 누락되었습니다: {', '.join(missing_columns)}")
+        
+    @abstractmethod
+    def initialize(self, data: pd.DataFrame) -> None:
+        """
+        전략 초기화
+        
+        Args:
+            data (pd.DataFrame): 초기화에 사용할 데이터
+            
+        Raises:
+            ValueError: 데이터가 비어있거나 필수 컬럼이 없는 경우
+        """
+        self._validate_data(data)
+        
+    @abstractmethod
+    def analyze(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """시장 분석"""
         pass
         
     @abstractmethod
-    def generate_signals(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_signals(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
         거래 신호 생성
         
         Args:
-            analysis (Dict[str, Any]): 분석 결과
+            data (pd.DataFrame): 신호 생성에 사용할 데이터
             
         Returns:
-            Dict[str, Any]: 거래 신호
+            Dict[str, Any]: 생성된 거래 신호
+            
+        Raises:
+            ValueError: 데이터가 비어있거나 필수 컬럼이 없는 경우
         """
+        self._validate_data(data)
+        
+    @abstractmethod
+    def execute(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """거래 실행"""
         pass
         
     @abstractmethod
-    def execute(self, signals: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        거래 실행
-        
-        Args:
-            signals (Dict[str, Any]): 거래 신호
-            
-        Returns:
-            Dict[str, Any]: 거래 결과
-        """
-        pass
-        
-    @abstractmethod
-    def update(self, data: Dict[str, Any]) -> None:
-        """
-        전략 업데이트
-        
-        Args:
-            data (Dict[str, Any]): 업데이트할 데이터
-        """
+    def update(self, data: pd.DataFrame) -> None:
+        """전략 상태 업데이트"""
         pass
         
     @abstractmethod
     def get_state(self) -> Dict[str, Any]:
-        """
-        전략 상태 조회
-        
-        Returns:
-            Dict[str, Any]: 전략 상태
-        """
+        """전략 상태 조회"""
         pass
         
     @abstractmethod
     def set_state(self, state: Dict[str, Any]) -> None:
-        """
-        전략 상태 설정
-        
-        Args:
-            state (Dict[str, Any]): 설정할 상태
-        """
+        """전략 상태 설정"""
         pass
         
     def log(self, message: str, level: str = "info") -> None:

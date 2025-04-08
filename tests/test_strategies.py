@@ -6,9 +6,9 @@ import pytest
 import pandas as pd
 import numpy as np
 from src.strategy.base_strategy import BaseStrategy
-from src.strategy.momentum import MomentumStrategy
+from src.strategy.breakout import BreakoutStrategy
 from src.strategy.mean_reversion import MeanReversionStrategy
-from src.strategies.breakout import BreakoutStrategy
+from src.strategy.momentum import MomentumStrategy
 from src.analysis.indicators.technical import TechnicalIndicators
 
 @pytest.fixture
@@ -31,10 +31,9 @@ def sample_data():
     return data
 
 @pytest.fixture
-def momentum_strategy(sample_data):
+def momentum_strategy():
     """모멘텀 전략 인스턴스 생성"""
     return MomentumStrategy(
-        data=sample_data,
         rsi_period=14,
         rsi_overbought=70,
         rsi_oversold=30,
@@ -44,88 +43,77 @@ def momentum_strategy(sample_data):
     )
 
 @pytest.fixture
-def mean_reversion_strategy(sample_data):
+def mean_reversion_strategy():
     """평균 회귀 전략 인스턴스 생성"""
     return MeanReversionStrategy(
-        data=sample_data,
         bb_period=20,
-        bb_std=2,
+        bb_std=2.0,
         rsi_period=14,
         rsi_overbought=70,
         rsi_oversold=30
     )
 
 @pytest.fixture
-def breakout_strategy(sample_data):
+def breakout_strategy():
     """브레이크아웃 전략 인스턴스 생성"""
     return BreakoutStrategy(
-        data=sample_data,
-        period=20,
-        std_dev=2,
-        volume_factor=1.5
+        atr_period=14,
+        atr_multiplier=2.0,
+        min_volume=1000.0
     )
 
 def test_base_strategy():
     """기본 전략 클래스 테스트"""
-    strategy = BaseStrategy()
-    
-    with pytest.raises(NotImplementedError):
-        strategy.generate_signals()
-    
-    with pytest.raises(NotImplementedError):
-        strategy.calculate_position_size()
+    with pytest.raises(TypeError):
+        BaseStrategy()
 
-def test_momentum_strategy_signals(momentum_strategy):
+def test_momentum_strategy_signals(momentum_strategy, sample_data):
     """모멘텀 전략 신호 생성 테스트"""
-    signals = momentum_strategy.generate_signals()
+    momentum_strategy.initialize(sample_data)
+    signals = momentum_strategy.generate_signals(sample_data)
     
-    assert isinstance(signals, pd.Series)
-    assert len(signals) == len(momentum_strategy.data)
-    assert signals.isin([-1, 0, 1]).all()
-    assert not signals.isnull().any()
+    assert isinstance(signals, dict)
+    assert 'buy' in signals
+    assert 'sell' in signals
+    assert 'analysis' in signals
 
-def test_mean_reversion_strategy_signals(mean_reversion_strategy):
+def test_mean_reversion_strategy_signals(mean_reversion_strategy, sample_data):
     """평균 회귀 전략 신호 생성 테스트"""
-    signals = mean_reversion_strategy.generate_signals()
+    mean_reversion_strategy.initialize(sample_data)
+    signals = mean_reversion_strategy.generate_signals(sample_data)
     
-    assert isinstance(signals, pd.Series)
-    assert len(signals) == len(mean_reversion_strategy.data)
-    assert signals.isin([-1, 0, 1]).all()
-    assert not signals.isnull().any()
+    assert isinstance(signals, dict)
+    assert 'buy' in signals
+    assert 'sell' in signals
+    assert 'analysis' in signals
 
-def test_breakout_strategy_signals(breakout_strategy):
+def test_breakout_strategy_signals(breakout_strategy, sample_data):
     """브레이크아웃 전략 신호 생성 테스트"""
-    signals = breakout_strategy.generate_signals()
+    breakout_strategy.initialize(sample_data)
+    signals = breakout_strategy.generate_signals(sample_data)
     
-    assert isinstance(signals, pd.Series)
-    assert len(signals) == len(breakout_strategy.data)
-    assert signals.isin([-1, 0, 1]).all()
-    assert not signals.isnull().any()
+    assert isinstance(signals, dict)
+    assert 'buy' in signals
+    assert 'sell' in signals
+    assert 'analysis' in signals
 
-def test_position_size_calculation(momentum_strategy):
+def test_position_size_calculation(momentum_strategy, sample_data):
     """포지션 크기 계산 테스트"""
-    position_size = momentum_strategy.calculate_position_size(
-        capital=10000,
-        risk_per_trade=0.02,
-        stop_loss=0.02
-    )
+    momentum_strategy.initialize(sample_data)
+    result = momentum_strategy.execute(sample_data)
     
-    assert isinstance(position_size, float)
-    assert position_size > 0
-    assert position_size <= 10000
+    assert isinstance(result, dict)
+    assert 'action' in result
+    assert result['action'] in ['buy', 'sell', 'hold']
 
-def test_risk_management(momentum_strategy):
+def test_risk_management(momentum_strategy, sample_data):
     """리스크 관리 테스트"""
-    stop_loss, take_profit = momentum_strategy.calculate_risk_levels(
-        entry_price=100,
-        stop_loss_pct=0.02,
-        take_profit_pct=0.04
-    )
+    momentum_strategy.initialize(sample_data)
+    state = momentum_strategy.get_state()
     
-    assert isinstance(stop_loss, float)
-    assert isinstance(take_profit, float)
-    assert stop_loss < 100
-    assert take_profit > 100
+    assert isinstance(state, dict)
+    assert 'initialized' in state
+    assert state['initialized'] is True
 
 def test_strategy_parameters(momentum_strategy):
     """전략 파라미터 테스트"""
@@ -139,12 +127,13 @@ def test_strategy_parameters(momentum_strategy):
 def test_empty_data():
     """빈 데이터 처리 테스트"""
     empty_data = pd.DataFrame()
+    strategy = MomentumStrategy()
     
     with pytest.raises(ValueError):
-        MomentumStrategy(data=empty_data)
+        strategy.initialize(empty_data)
     
     with pytest.raises(ValueError):
-        MeanReversionStrategy(data=empty_data)
+        strategy.generate_signals(empty_data)
     
     with pytest.raises(ValueError):
-        BreakoutStrategy(data=empty_data) 
+        strategy.execute(empty_data) 

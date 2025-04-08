@@ -26,79 +26,85 @@ coin_Trading/
 src/
 ├── main.py                # 메인 실행 파일
 ├── run_backtest.py        # 백테스트 실행 파일
-├── strategies/            # 트레이딩 전략
-│   ├── base.py           # 기본 전략 클래스
-│   ├── integrated.py     # 통합 전략
+├── analysis/             # 기술적 분석
+│   ├── technical.py      # 기술적 지표
+│   ├── pattern.py        # 차트 패턴
+│   ├── machine_learning.py # 머신러닝 분석
 │   └── __init__.py
-├── indicators/           # 기술적 지표
-│   ├── basic.py         # 기본 지표
-│   ├── advanced.py      # 고급 지표
+├── strategy/            # 트레이딩 전략
+│   ├── base.py         # 기본 전략 클래스
+│   ├── portfolio.py    # 포트폴리오 관리
 │   └── __init__.py
-├── exchange/            # 거래소 인터페이스
-│   ├── base.py         # 기본 거래소 클래스
-│   ├── binance.py      # 바이낸스 구현
+├── exchange/           # 거래소 인터페이스
+│   ├── base.py        # 기본 거래소 클래스
+│   ├── binance.py     # 바이낸스 구현
 │   └── __init__.py
-├── risk/               # 리스크 관리
+├── risk/              # 리스크 관리
 │   ├── manager.py     # 리스크 관리자
 │   └── __init__.py
-├── utils/             # 유틸리티 함수
+├── utils/            # 유틸리티 함수
 │   ├── logger.py     # 로깅 설정
 │   ├── config.py     # 설정 관리
+│   ├── data_loader.py # 데이터 로딩
 │   └── __init__.py
 ├── database/         # 데이터베이스 관리
 │   ├── models.py    # 데이터 모델
 │   └── __init__.py
 ├── backtest/        # 백테스팅 시스템
 │   ├── engine.py   # 백테스트 엔진
+│   ├── analyzer.py # 결과 분석
 │   └── __init__.py
 ├── dashboard/      # 웹 대시보드
 │   ├── app.py     # 대시보드 앱
 │   └── __init__.py
 ├── monitoring/    # 모니터링 시스템
-│   ├── alerts.py # 알림 시스템
+│   ├── performance.py # 성능 모니터링
+│   ├── alerts.py     # 알림 시스템
 │   └── __init__.py
-└── notification/ # 알림 시스템
-    ├── telegram.py # 텔레그램 알림
+└── api/          # API 관리
+    ├── manager.py # API 관리자
     └── __init__.py
 ```
 
 ## 주요 컴포넌트 설명
 
-### 1. 트레이딩 시스템 (src/strategies/)
-- `base.py`: 기본 전략 클래스 정의, 모든 전략의 기본 구조 제공
-- `integrated.py`: 여러 전략을 통합한 복합 전략 구현
+### 1. 분석 시스템 (src/analysis/)
+- `technical.py`: RSI, MACD, 볼린저 밴드 등 기술적 지표
+- `pattern.py`: 차트 패턴 인식 및 분석
+- `machine_learning.py`: 머신러닝 기반 시장 분석
 
-### 2. 기술적 지표 (src/indicators/)
-- `basic.py`: RSI, MACD, 이동평균 등 기본적인 기술 지표
-- `advanced.py`: 고급 기술적 지표 및 커스텀 지표
+### 2. 전략 시스템 (src/strategy/)
+- `base.py`: 기본 전략 클래스
+- `portfolio.py`: 포트폴리오 관리
 
 ### 3. 거래소 인터페이스 (src/exchange/)
 - `base.py`: 거래소 연동을 위한 기본 인터페이스
 - `binance.py`: 바이낸스 API 구현
 
 ### 4. 리스크 관리 (src/risk/)
-- `manager.py`: 포지션 크기, 손절, 익절 등 리스크 관리 로직
+- `manager.py`: 포지션 크기, 손절, 익절 등 리스크 관리
 
 ### 5. 백테스팅 시스템 (src/backtest/)
 - `engine.py`: 과거 데이터를 사용한 전략 테스트
-- 성능 분석 및 최적화 도구
+- `analyzer.py`: 백테스팅 결과 분석
 
-### 6. 모니터링 및 알림 (src/monitoring/, src/notification/)
-- 실시간 성능 모니터링
-- 텔레그램을 통한 알림 시스템
+### 6. 모니터링 시스템 (src/monitoring/)
+- `performance.py`: 시스템 성능 모니터링
+- `alerts.py`: 알림 시스템 (텔레그램 통합)
 
 ### 7. 데이터 관리 (src/database/)
-- 거래 기록, 시장 데이터 저장
-- 데이터 분석을 위한 구조화
+- `models.py`: 데이터 모델 및 스키마
 
 ### 8. 웹 대시보드 (src/dashboard/)
-- 실시간 트레이딩 현황 시각화
-- 성능 지표 및 포트폴리오 관리
+- `app.py`: Streamlit 기반 웹 인터페이스
 
 ### 9. 유틸리티 (src/utils/)
-- 로깅 시스템
-- 설정 관리
-- 공통 유틸리티 함수
+- `logger.py`: 로깅 시스템
+- `config.py`: 설정 관리
+- `data_loader.py`: 데이터 로딩 및 캐싱
+
+### 10. API 관리 (src/api/)
+- `manager.py`: API 키 및 요청 관리
 
 ## 설정 파일
 - `.env`: API 키, 시크릿 등 민감한 설정
