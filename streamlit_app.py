@@ -153,10 +153,12 @@ def get_or_create_eventloop():
     """이벤트 루프 가져오기 또는 생성"""
     try:
         return asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop
+    except RuntimeError as ex:
+        if "There is no current event loop in thread" in str(ex):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
+        raise
 
 # 중첩 이벤트 루프 허용 (Streamlit 환경에서 필요)
 nest_asyncio.apply()
@@ -533,11 +535,8 @@ def render_position_info(positions: list):
 def run_async(async_func):
     """비동기 함수를 동기적으로 실행하는 헬퍼 함수"""
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(async_func)
-        loop.close()
-        return result
+        loop = get_or_create_eventloop()
+        return loop.run_until_complete(async_func)
     except Exception as e:
         print(f"비동기 실행 오류: {e}")
         return None
@@ -1856,6 +1855,9 @@ def render_performance_tab(performance_monitor: PerformanceMonitor):
 def main():
     """메인 함수"""
     try:
+        # 이벤트 루프 초기화
+        get_or_create_eventloop()
+        
         # 설정 로드
         config = load_config()
         
