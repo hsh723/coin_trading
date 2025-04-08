@@ -2,217 +2,322 @@
 데이터 수집기 모듈
 """
 
-import asyncio
-import logging
-from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+from typing import Dict, List, Optional, Any, Callable
 import ccxt
-from typing import Dict, Any, List, Optional
-
-logger = logging.getLogger(__name__)
+import websocket
+import json
+import threading
+import time
+from datetime import datetime, timedelta
+import logging
+from src.utils.logger import get_logger
+from src.utils.database import DatabaseManager
 
 class DataCollector:
-    """
-    데이터 수집기 클래스
-    """
-    def __init__(self, exchange_id: str = 'binance'):
+    """데이터 수집기 클래스"""
+    
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        symbols: List[str] = ['BTC/USDT'],
+        timeframes: List[str] = ['1h'],
+        exchange_id: str = 'binance'
+    ):
         """
         데이터 수집기 초기화
         
         Args:
+            api_key (Optional[str]): API 키
+            api_secret (Optional[str]): API 시크릿
+            symbols (List[str]): 수집할 심볼 목록
+            timeframes (List[str]): 수집할 타임프레임 목록
             exchange_id (str): 거래소 ID
         """
-        self.exchange = getattr(ccxt, exchange_id)()
-        self.logger = logging.getLogger(__name__)
-        self._setup_logging()
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.symbols = symbols
+        self.timeframes = timeframes
+        self.exchange_id = exchange_id
         
-    def _setup_logging(self):
-        """로깅 설정"""
-        self.logger.setLevel(logging.INFO)
+        self.logger = get_logger(__name__)
+        self.db = DatabaseManager()
         
-    async def collect_market_data(self, symbol: str, timeframe: str, 
-                                start_date: datetime, end_date: datetime) -> pd.DataFrame:
+        # 거래소 초기화
+        self.exchange = self._init_exchange()
+        
+        # WebSocket 연결 상태
+        self.ws_connected = False
+        self.ws_thread = None
+        self.ws_callbacks = {}
+        
+    def _init_exchange(self) -> ccxt.Exchange:
         """
-        시장 데이터 수집
+        거래소 초기화
         
-        Args:
-            symbol (str): 거래 심볼
-            timeframe (str): 시간대
-            start_date (datetime): 시작 날짜
-            end_date (datetime): 종료 날짜
-            
         Returns:
-            pd.DataFrame: 수집된 시장 데이터
+            ccxt.Exchange: 거래소 객체
         """
         try:
-            # 임시 데이터 생성 (실제 구현에서는 거래소 API 사용)
-            dates = pd.date_range(start=start_date, end=end_date, freq=timeframe)
-            data = {
-                'timestamp': dates,
-                'open': np.random.normal(50000, 1000, len(dates)),
-                'high': np.random.normal(51000, 1000, len(dates)),
-                'low': np.random.normal(49000, 1000, len(dates)),
-                'close': np.random.normal(50000, 1000, len(dates)),
-                'volume': np.random.normal(1000, 100, len(dates))
-            }
-            df = pd.DataFrame(data)
-            
-            self.logger.info(f"시장 데이터 수집 완료: {symbol} {timeframe}")
-            return df
+            exchange_class = getattr(ccxt, self.exchange_id)
+            exchange = exchange_class({
+                'apiKey': self.api_key,
+                'secret': self.api_secret,
+                'enableRateLimit': True
+            })
+            return exchange
             
         except Exception as e:
-            self.logger.error(f"시장 데이터 수집 실패: {str(e)}")
+            self.logger.error(f"거래소 초기화 실패: {str(e)}")
             raise
             
-    async def collect_trade_data(self, symbol: str, 
-                                start_date: datetime, end_date: datetime) -> pd.DataFrame:
-        """
-        거래 데이터 수집
-        
-        Args:
-            symbol (str): 거래 심볼
-            start_date (datetime): 시작 날짜
-            end_date (datetime): 종료 날짜
-            
-        Returns:
-            pd.DataFrame: 수집된 거래 데이터
-        """
-        try:
-            # 임시 데이터 생성 (실제 구현에서는 거래소 API 사용)
-            dates = pd.date_range(start=start_date, end=end_date, freq='1H')
-            data = {
-                'timestamp': dates,
-                'price': np.random.normal(50000, 1000, len(dates)),
-                'volume': np.random.normal(1000, 100, len(dates)),
-                'side': np.random.choice(['buy', 'sell'], len(dates))
-            }
-            df = pd.DataFrame(data)
-            
-            self.logger.info(f"거래 데이터 수집 완료: {symbol}")
-            return df
-            
-        except Exception as e:
-            self.logger.error(f"거래 데이터 수집 실패: {str(e)}")
-            raise
-
-    def get_historical_data(
+    def fetch_historical_data(
         self,
         symbol: str,
-        start_time: str,
-        end_time: str,
-        interval: str = '1h'
+        timeframe: str,
+        start_time: datetime,
+        end_time: datetime
     ) -> pd.DataFrame:
         """
         과거 데이터 수집
         
         Args:
             symbol (str): 거래 심볼
-            start_time (str): 시작 시간 (YYYY-MM-DD)
-            end_time (str): 종료 시간 (YYYY-MM-DD)
-            interval (str): 시간 간격
+            timeframe (str): 타임프레임
+            start_time (datetime): 시작 시간
+            end_time (datetime): 종료 시간
             
         Returns:
-            pd.DataFrame: 과거 데이터
+            pd.DataFrame: OHLCV 데이터
         """
         try:
-            # 시간 변환
-            start_timestamp = int(datetime.strptime(start_time, '%Y-%m-%d').timestamp() * 1000)
-            end_timestamp = int(datetime.strptime(end_time, '%Y-%m-%d').timestamp() * 1000)
+            self.logger.info(f"과거 데이터 수집 시작: {symbol} {timeframe}")
             
-            # 시간 간격 변환
-            timeframe = self._convert_interval(interval)
-            
+            # 데이터베이스에서 기존 데이터 확인
+            existing_data = self.db.get_market_data(symbol, timeframe, start_time, end_time)
+            if not existing_data.empty:
+                self.logger.info("기존 데이터 사용")
+                return existing_data
+                
             # 데이터 수집
-            ohlcv = self.exchange.fetch_ohlcv(
-                symbol,
-                timeframe=timeframe,
-                since=start_timestamp,
-                limit=None
-            )
+            data = []
+            current_time = start_time
             
-            # 데이터프레임 변환
+            while current_time < end_time:
+                try:
+                    # API 요청 제한 관리
+                    time.sleep(self.exchange.rateLimit / 1000)
+                    
+                    # 데이터 수집
+                    ohlcv = self.exchange.fetch_ohlcv(
+                        symbol,
+                        timeframe,
+                        since=int(current_time.timestamp() * 1000),
+                        limit=1000
+                    )
+                    
+                    if not ohlcv:
+                        break
+                        
+                    data.extend(ohlcv)
+                    current_time = datetime.fromtimestamp(ohlcv[-1][0] / 1000)
+                    
+                except Exception as e:
+                    self.logger.error(f"데이터 수집 중 오류 발생: {str(e)}")
+                    time.sleep(5)
+                    continue
+                    
+            # 데이터프레임 생성
             df = pd.DataFrame(
-                ohlcv,
+                data,
                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
             )
-            
-            # 인덱스 설정
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
             
-            # 종료 시간 이후 데이터 제거
-            df = df[df.index <= pd.to_datetime(end_time)]
+            # 데이터베이스에 저장
+            self.db.save_market_data(df, symbol, timeframe)
             
+            self.logger.info(f"과거 데이터 수집 완료: {len(df)}개")
             return df
             
         except Exception as e:
             self.logger.error(f"과거 데이터 수집 실패: {str(e)}")
             raise
             
-    def get_realtime_data(
+    def start_websocket_stream(
+        self,
+        callback_function: Callable[[Dict[str, Any]], None]
+    ):
+        """
+        WebSocket 스트림 시작
+        
+        Args:
+            callback_function (Callable[[Dict[str, Any]], None]): 콜백 함수
+        """
+        try:
+            # WebSocket URL 생성
+            ws_url = f"wss://stream.binance.com:9443/ws"
+            
+            # WebSocket 연결
+            self.ws = websocket.WebSocketApp(
+                ws_url,
+                on_message=self._on_message,
+                on_error=self._on_error,
+                on_close=self._on_close,
+                on_open=self._on_open
+            )
+            
+            # 콜백 함수 저장
+            self.ws_callbacks['market_data'] = callback_function
+            
+            # WebSocket 스레드 시작
+            self.ws_thread = threading.Thread(target=self.ws.run_forever)
+            self.ws_thread.daemon = True
+            self.ws_thread.start()
+            
+            # 구독 메시지 전송
+            self._subscribe_streams()
+            
+        except Exception as e:
+            self.logger.error(f"WebSocket 스트림 시작 실패: {str(e)}")
+            raise
+            
+    def _on_message(self, ws, message):
+        """
+        WebSocket 메시지 처리
+        
+        Args:
+            ws: WebSocket 객체
+            message: 수신 메시지
+        """
+        try:
+            data = json.loads(message)
+            
+            # 콜백 함수 호출
+            if 'market_data' in self.ws_callbacks:
+                self.ws_callbacks['market_data'](data)
+                
+        except Exception as e:
+            self.logger.error(f"WebSocket 메시지 처리 실패: {str(e)}")
+            
+    def _on_error(self, ws, error):
+        """
+        WebSocket 에러 처리
+        
+        Args:
+            ws: WebSocket 객체
+            error: 에러 객체
+        """
+        self.logger.error(f"WebSocket 에러: {str(error)}")
+        self.ws_connected = False
+        
+    def _on_close(self, ws, close_status_code, close_msg):
+        """
+        WebSocket 연결 종료 처리
+        
+        Args:
+            ws: WebSocket 객체
+            close_status_code: 종료 상태 코드
+            close_msg: 종료 메시지
+        """
+        self.logger.info("WebSocket 연결 종료")
+        self.ws_connected = False
+        
+    def _on_open(self, ws):
+        """
+        WebSocket 연결 시작 처리
+        
+        Args:
+            ws: WebSocket 객체
+        """
+        self.logger.info("WebSocket 연결 시작")
+        self.ws_connected = True
+        
+    def _subscribe_streams(self):
+        """스트림 구독"""
+        try:
+            # 구독 메시지 생성
+            subscribe_message = {
+                "method": "SUBSCRIBE",
+                "params": [
+                    f"{symbol.lower()}@kline_{timeframe}"
+                    for symbol in self.symbols
+                    for timeframe in self.timeframes
+                ],
+                "id": 1
+            }
+            
+            # 구독 메시지 전송
+            self.ws.send(json.dumps(subscribe_message))
+            
+        except Exception as e:
+            self.logger.error(f"스트림 구독 실패: {str(e)}")
+            raise
+            
+    def save_data(
+        self,
+        data: pd.DataFrame,
+        file_path: Optional[str] = None,
+        db_connection: Optional[Any] = None
+    ):
+        """
+        데이터 저장
+        
+        Args:
+            data (pd.DataFrame): 저장할 데이터
+            file_path (Optional[str]): 파일 경로
+            db_connection (Optional[Any]): 데이터베이스 연결
+        """
+        try:
+            if file_path:
+                data.to_csv(file_path, index=False)
+                self.logger.info(f"데이터를 파일에 저장: {file_path}")
+                
+            if db_connection:
+                data.to_sql('market_data', db_connection, if_exists='append', index=False)
+                self.logger.info("데이터를 데이터베이스에 저장")
+                
+        except Exception as e:
+            self.logger.error(f"데이터 저장 실패: {str(e)}")
+            raise
+            
+    def get_latest_data(
         self,
         symbol: str,
-        interval: str = '1h'
+        timeframe: str,
+        limit: int = 100
     ) -> pd.DataFrame:
         """
-        실시간 데이터 수집
+        최신 데이터 조회
         
         Args:
             symbol (str): 거래 심볼
-            interval (str): 시간 간격
+            timeframe (str): 타임프레임
+            limit (int): 조회 개수
             
         Returns:
-            pd.DataFrame: 실시간 데이터
+            pd.DataFrame: OHLCV 데이터
         """
         try:
-            # 시간 간격 변환
-            timeframe = self._convert_interval(interval)
+            # 데이터베이스에서 조회
+            data = self.db.get_latest_market_data(symbol, timeframe, limit)
             
-            # 데이터 수집
-            ohlcv = self.exchange.fetch_ohlcv(
-                symbol,
-                timeframe=timeframe,
-                limit=1
-            )
-            
-            # 데이터프레임 변환
-            df = pd.DataFrame(
-                ohlcv,
-                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            )
-            
-            # 인덱스 설정
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
-            
-            return df
+            if data.empty:
+                # API에서 조회
+                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+                data = pd.DataFrame(
+                    ohlcv,
+                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                )
+                data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms')
+                
+                # 데이터베이스에 저장
+                self.db.save_market_data(data, symbol, timeframe)
+                
+            return data
             
         except Exception as e:
-            self.logger.error(f"실시간 데이터 수집 실패: {str(e)}")
-            raise
-            
-    def _convert_interval(self, interval: str) -> str:
-        """
-        시간 간격 변환
-        
-        Args:
-            interval (str): 시간 간격
-            
-        Returns:
-            str: 변환된 시간 간격
-        """
-        interval_map = {
-            '1m': '1m',
-            '5m': '5m',
-            '15m': '15m',
-            '30m': '30m',
-            '1h': '1h',
-            '4h': '4h',
-            '1d': '1d'
-        }
-        
-        return interval_map.get(interval, '1h')
-
-# 전역 인스턴스 생성
-data_collector = DataCollector() 
+            self.logger.error(f"최신 데이터 조회 실패: {str(e)}")
+            raise 
