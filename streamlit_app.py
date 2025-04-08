@@ -81,7 +81,8 @@ from src.utils.feedback_system import FeedbackSystem
 from src.notification.telegram_notifier import telegram_notifier
 
 # 환경 변수 로드
-load_dotenv()
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(env_path)
 
 # CSS 스타일 정의
 st.markdown("""
