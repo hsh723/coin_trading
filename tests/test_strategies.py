@@ -6,9 +6,10 @@ import pytest
 import pandas as pd
 import numpy as np
 from src.strategies.base import BaseStrategy
-from src.strategies.momentum import MomentumStrategy
+from src.strategy.momentum import MomentumStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.breakout import BreakoutStrategy
+from src.analysis.indicators.technical import TechnicalIndicators
 
 @pytest.fixture
 def sample_data():

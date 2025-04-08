@@ -1,8 +1,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-from src.data.processor import DataProcessor
-from src.indicators.technical import TechnicalIndicators
+from src.analysis.indicators.technical import TechnicalIndicators
 
 @pytest.fixture
 def sample_data():

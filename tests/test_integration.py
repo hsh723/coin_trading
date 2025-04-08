@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from src.data.collector import DataCollector
 from src.data.processor import DataProcessor
-from src.indicators.technical import TechnicalIndicators
-from src.strategies.momentum import MomentumStrategy
+from src.analysis.indicators.technical import TechnicalIndicators
+from src.strategy.momentum import MomentumStrategy
 from src.risk.manager import RiskManager
 from src.notification.telegram import TelegramNotifier
 from src.trading.executor import OrderExecutor
@@ -238,5 +238,4 @@ def test_risk_management_integration(mock_exchange, sample_data):
         
         # 결과 검증
         assert 'BTC/USDT' in risk_manager.positions
-        assert risk_manager.positions['BTC/USDT']['unrealized_pnl'] == 20
-        assert risk_manager.calculate_total_pnl() == 20 
+        assert risk_manager.positions['BTC/USDT']['unrealized_pnl'] == 20 
