@@ -1,109 +1,121 @@
-from typing import Dict, List, Optional, Any
+"""
+브레이크아웃 전략 클래스
+"""
+
+from typing import Dict, Any, Optional
 import pandas as pd
 import numpy as np
-from .base_strategy import BaseStrategy
+from src.strategy.base_strategy import BaseStrategy
 from src.analysis.indicators.technical import TechnicalIndicators
+from src.utils.logger import get_logger
 
 class BreakoutStrategy(BaseStrategy):
-    """돌파 기반 거래 전략"""
+    """브레이크아웃 전략 클래스"""
     
-    def __init__(self, 
+    def __init__(self,
+                 lookback_period: int = 20,
                  atr_period: int = 14,
                  atr_multiplier: float = 2.0,
-                 min_volume: float = 1000.0):
+                 volume_threshold: float = 1.5):
         super().__init__()
+        self.lookback_period = lookback_period
         self.atr_period = atr_period
         self.atr_multiplier = atr_multiplier
-        self.min_volume = min_volume
-        self._state = {}
+        self.volume_threshold = volume_threshold
         
     def initialize(self, data: pd.DataFrame) -> None:
         """전략 초기화"""
-        super().initialize(data)
         self._state = {
-            'initialized': True,
             'last_signal': None,
-            'position': None,
-            'stop_loss': None,
-            'take_profit': None
+            'position': 0,
+            'entry_price': 0.0
         }
+        
+    def calculate_atr(self, data: pd.DataFrame) -> pd.Series:
+        """ATR 계산"""
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=self.atr_period).mean()
+        
+        return atr
         
     def analyze(self, data: pd.DataFrame) -> Dict[str, Any]:
         """시장 분석"""
-        # ATR 계산
-        atr = TechnicalIndicators.calculate_atr(
-            data['high'],
-            data['low'],
-            data['close'],
-            self.atr_period
-        )
+        # 고가/저가 저항/지지선
+        high = data['high'].rolling(window=self.lookback_period).max()
+        low = data['low'].rolling(window=self.lookback_period).min()
         
-        # 볼륨 분석
-        volume_ma = data['volume'].rolling(window=20).mean()
+        # ATR 계산
+        atr = self.calculate_atr(data)
+        
+        # 거래량 이동평균
+        volume_ma = data['volume'].rolling(window=self.lookback_period).mean()
         
         return {
+            'high': high,
+            'low': low,
             'atr': atr,
-            'volume_ma': volume_ma,
-            'high': data['high'],
-            'low': data['low'],
-            'close': data['close']
+            'volume_ma': volume_ma
         }
         
     def generate_signals(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """거래 신호 생성"""
-        super().generate_signals(data)
+        """매매 신호 생성"""
         analysis = self.analyze(data)
-        latest = {
-            'price': data['close'].iloc[-1],
-            'high': data['high'].iloc[-1],
-            'low': data['low'].iloc[-1],
-            'volume': data['volume'].iloc[-1],
-            'atr': analysis['atr'].iloc[-1],
-            'volume_ma': analysis['volume_ma'].iloc[-1]
-        }
+        latest = data.iloc[-1]
         
-        # 매수 조건: 상단 돌파 및 볼륨 증가
+        # 가격이 고가 저항선을 돌파하고 거래량이 평균 이상
         buy_signal = (
-            latest['price'] > latest['high'] and
-            latest['volume'] > latest['volume_ma'] and
-            latest['volume'] > self.min_volume
+            (latest['close'] > analysis['high'].iloc[-2]) &
+            (latest['volume'] > analysis['volume_ma'].iloc[-1] * self.volume_threshold)
         )
         
-        # 매도 조건: 하단 돌파
-        sell_signal = latest['price'] < latest['low']
+        # 가격이 저가 지지선을 하향 돌파하고 거래량이 평균 이상
+        sell_signal = (
+            (latest['close'] < analysis['low'].iloc[-2]) &
+            (latest['volume'] > analysis['volume_ma'].iloc[-1] * self.volume_threshold)
+        )
         
         return {
-            'buy': buy_signal,
-            'sell': sell_signal,
-            'analysis': latest
+            'buy_signal': buy_signal,
+            'sell_signal': sell_signal,
+            'price': latest['close'],
+            'analysis': {
+                'high': analysis['high'].iloc[-1],
+                'low': analysis['low'].iloc[-1],
+                'atr': analysis['atr'].iloc[-1],
+                'volume_ma': analysis['volume_ma'].iloc[-1]
+            }
         }
         
-    def execute(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """거래 실행"""
+    def execute(self, data: pd.DataFrame, position: Optional[float] = None) -> Dict[str, Any]:
+        """매매 실행"""
         signals = self.generate_signals(data)
-        latest = signals['analysis']
         
-        if signals['buy'] and self._state['position'] is None:
-            self._state['position'] = 'long'
-            self._state['stop_loss'] = latest['price'] - (latest['atr'] * self.atr_multiplier)
-            self._state['take_profit'] = latest['price'] + (latest['atr'] * self.atr_multiplier)
-            return {'action': 'buy', 'price': latest['price']}
-        elif signals['sell'] or latest['price'] < self._state['stop_loss']:
-            self._state['position'] = None
-            self._state['stop_loss'] = None
-            self._state['take_profit'] = None
-            return {'action': 'sell', 'price': latest['price']}
-            
-        return {'action': 'hold'}
+        if position is None or position == 0:
+            if signals['buy_signal']:
+                return {'action': 'buy', 'amount': 1.0}
+        else:
+            if signals['sell_signal']:
+                return {'action': 'sell', 'amount': position}
+                
+        return {'action': 'hold', 'amount': 0.0}
         
     def update(self, data: pd.DataFrame) -> None:
         """전략 상태 업데이트"""
-        self._state['last_signal'] = self.generate_signals(data)
+        signals = self.generate_signals(data)
+        self._state['last_signal'] = signals
         
     def get_state(self) -> Dict[str, Any]:
-        """전략 상태 조회"""
-        return self._state.copy()
+        """전략 상태 반환"""
+        return self._state
         
     def set_state(self, state: Dict[str, Any]) -> None:
         """전략 상태 설정"""
-        self._state = state.copy() 
+        self._state = state 

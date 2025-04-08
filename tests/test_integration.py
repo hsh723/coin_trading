@@ -15,6 +15,7 @@ from src.risk.manager import RiskManager
 from src.notification.telegram import TelegramNotifier
 from src.trading.executor import OrderExecutor
 from src.backtest.engine import BacktestEngine
+from src.trading.trader import Trader
 
 @pytest.fixture
 def mock_exchange():
@@ -238,4 +239,253 @@ def test_risk_management_integration(mock_exchange, sample_data):
         
         # 결과 검증
         assert 'BTC/USDT' in risk_manager.positions
-        assert risk_manager.positions['BTC/USDT']['unrealized_pnl'] == 20 
+        assert risk_manager.positions['BTC/USDT']['unrealized_pnl'] == 20
+
+def test_end_to_end_trading_flow(mock_binance_api):
+    """종단간 트레이딩 흐름 테스트"""
+    # 데이터 수집
+    collector = DataCollector()
+    collector.exchange = mock_binance_api
+    
+    start_time = datetime.now() - timedelta(days=7)
+    end_time = datetime.now()
+    market_data = collector.get_historical_data(
+        symbol='BTC/USDT',
+        start_time=start_time,
+        end_time=end_time,
+        interval='1h'
+    )
+    
+    # 데이터 전처리
+    processor = DataProcessor()
+    processed_data = processor.preprocess_data(market_data)
+    processed_data = processor.add_technical_indicators(processed_data)
+    
+    # 전략 설정
+    strategy = MomentumStrategy()
+    strategy.initialize(processed_data)
+    
+    # 리스크 관리 설정
+    risk_manager = RiskManager()
+    
+    # 트레이더 설정
+    trader = Trader()
+    trader.setup(strategy, risk_manager)
+    trader.balance = 10000
+    
+    # 거래 실행
+    for i in range(len(processed_data)):
+        current_data = processed_data.iloc[i]
+        signals = strategy.generate_signals(current_data)
+        
+        if signals['buy_signal']:
+            trade = {
+                'symbol': 'BTC/USDT',
+                'side': 'buy',
+                'amount': 0.1,
+                'price': current_data['close'],
+                'timestamp': int(datetime.now().timestamp() * 1000)
+            }
+            trader.execute_trade(trade)
+        
+        elif signals['sell_signal'] and trader.position > 0:
+            trader.close_position(current_data)
+        
+        trader.update_state(current_data)
+    
+    # 성능 지표 확인
+    metrics = trader.get_performance_metrics()
+    assert 'total_return' in metrics
+    assert 'sharpe_ratio' in metrics
+    assert 'max_drawdown' in metrics
+
+def test_backtest_integration(mock_binance_api):
+    """백테스팅 통합 테스트"""
+    # 데이터 수집 및 전처리
+    collector = DataCollector()
+    collector.exchange = mock_binance_api
+    
+    start_time = datetime.now() - timedelta(days=30)
+    end_time = datetime.now()
+    market_data = collector.get_historical_data(
+        symbol='BTC/USDT',
+        start_time=start_time,
+        end_time=end_time,
+        interval='1h'
+    )
+    
+    processor = DataProcessor()
+    processed_data = processor.preprocess_data(market_data)
+    processed_data = processor.add_technical_indicators(processed_data)
+    
+    # 백테스팅 엔진 설정
+    engine = BacktestEngine()
+    strategy = MomentumStrategy()
+    risk_manager = RiskManager()
+    
+    engine.setup(strategy, risk_manager)
+    
+    # 백테스팅 실행
+    results = engine.run(processed_data, initial_balance=10000)
+    
+    # 결과 검증
+    assert 'total_return' in results
+    assert 'sharpe_ratio' in results
+    assert 'max_drawdown' in results
+    assert 'trades' in results
+    assert len(results['trades']) > 0
+
+def test_risk_management_integration(mock_binance_api):
+    """리스크 관리 통합 테스트"""
+    # 데이터 수집
+    collector = DataCollector()
+    collector.exchange = mock_binance_api
+    
+    market_data = collector.get_historical_data(
+        symbol='BTC/USDT',
+        start_time=datetime.now() - timedelta(days=7),
+        end_time=datetime.now(),
+        interval='1h'
+    )
+    
+    # 트레이딩 시스템 설정
+    trader = Trader()
+    strategy = MomentumStrategy()
+    risk_manager = RiskManager()
+    
+    trader.setup(strategy, risk_manager)
+    trader.balance = 10000
+    
+    # 리스크 제한 테스트
+    for i in range(len(market_data)):
+        current_data = market_data.iloc[i]
+        
+        # 큰 포지션 시도
+        large_trade = {
+            'symbol': 'BTC/USDT',
+            'side': 'buy',
+            'amount': 10,  # 매우 큰 거래량
+            'price': current_data['close'],
+            'timestamp': int(datetime.now().timestamp() * 1000)
+        }
+        
+        result = trader.execute_trade(large_trade)
+        assert result['status'] == 'rejected'
+        assert 'risk_limit' in result['reason']
+        
+        # 정상적인 거래 시도
+        normal_trade = {
+            'symbol': 'BTC/USDT',
+            'side': 'buy',
+            'amount': 0.1,
+            'price': current_data['close'],
+            'timestamp': int(datetime.now().timestamp() * 1000)
+        }
+        
+        result = trader.execute_trade(normal_trade)
+        assert result['status'] == 'executed'
+        
+        trader.update_state(current_data)
+        
+        # 낙폭 모니터링
+        if trader.calculate_drawdown() > risk_manager.max_drawdown:
+            assert trader.position == 0  # 포지션 청산 확인
+
+def test_data_processing_integration(mock_binance_api):
+    """데이터 처리 통합 테스트"""
+    # 데이터 수집
+    collector = DataCollector()
+    collector.exchange = mock_binance_api
+    
+    market_data = collector.get_historical_data(
+        symbol='BTC/USDT',
+        start_time=datetime.now() - timedelta(days=7),
+        end_time=datetime.now(),
+        interval='1h'
+    )
+    
+    # 데이터 전처리
+    processor = DataProcessor()
+    
+    # 결측치 처리
+    data_with_nan = market_data.copy()
+    data_with_nan.iloc[0, 0] = None
+    processed_data = processor.preprocess_data(data_with_nan)
+    assert not processed_data.isnull().any().any()
+    
+    # 이상치 처리
+    data_with_outlier = market_data.copy()
+    data_with_outlier.iloc[0, 0] = 1000000  # 이상치 추가
+    processed_data = processor.preprocess_data(data_with_outlier)
+    assert processed_data.iloc[0, 0] != 1000000
+    
+    # 기술적 지표 추가
+    processed_data = processor.add_technical_indicators(processed_data)
+    assert 'rsi' in processed_data.columns
+    assert 'macd' in processed_data.columns
+    assert 'signal' in processed_data.columns
+    
+    # 시간대 리샘플링
+    resampled_data = processor.resample_timeframe(
+        processed_data,
+        source_timeframe='1h',
+        target_timeframe='4h'
+    )
+    assert len(resampled_data) < len(processed_data)
+    assert resampled_data.index.freq == '4H'
+
+def test_performance_monitoring(mock_binance_api):
+    """성능 모니터링 통합 테스트"""
+    # 데이터 수집 및 전처리
+    collector = DataCollector()
+    collector.exchange = mock_binance_api
+    
+    market_data = collector.get_historical_data(
+        symbol='BTC/USDT',
+        start_time=datetime.now() - timedelta(days=30),
+        end_time=datetime.now(),
+        interval='1h'
+    )
+    
+    processor = DataProcessor()
+    processed_data = processor.preprocess_data(market_data)
+    processed_data = processor.add_technical_indicators(processed_data)
+    
+    # 트레이딩 시스템 설정
+    trader = Trader()
+    strategy = MomentumStrategy()
+    risk_manager = RiskManager()
+    
+    trader.setup(strategy, risk_manager)
+    trader.balance = 10000
+    
+    # 거래 실행 및 성능 모니터링
+    for i in range(len(processed_data)):
+        current_data = processed_data.iloc[i]
+        signals = strategy.generate_signals(current_data)
+        
+        if signals['buy_signal']:
+            trade = {
+                'symbol': 'BTC/USDT',
+                'side': 'buy',
+                'amount': 0.1,
+                'price': current_data['close'],
+                'timestamp': int(datetime.now().timestamp() * 1000)
+            }
+            trader.execute_trade(trade)
+        
+        elif signals['sell_signal'] and trader.position > 0:
+            trader.close_position(current_data)
+        
+        trader.update_state(current_data)
+        
+        # 성능 지표 모니터링
+        metrics = trader.get_performance_metrics()
+        assert 'total_return' in metrics
+        assert 'sharpe_ratio' in metrics
+        assert 'max_drawdown' in metrics
+        assert 'win_rate' in metrics
+        
+        # 리스크 모니터링
+        assert trader.calculate_drawdown() <= risk_manager.max_drawdown
+        assert trader.position <= risk_manager.max_position_size * trader.balance / current_data['close'] 

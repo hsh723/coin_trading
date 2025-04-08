@@ -43,62 +43,183 @@ class RiskMetrics:
 class RiskManager:
     """리스크 관리 클래스"""
     
-    def __init__(
-        self,
-        initial_capital: float,
-        max_position_size: float = 0.1,  # 최대 포지션 크기 (자본금 대비)
-        max_leverage: float = 3.0,       # 최대 레버리지
-        max_drawdown: float = 0.2,       # 최대 허용 낙폭
-        risk_per_trade: float = 0.01,    # 거래당 리스크
-        correlation_threshold: float = 0.7,  # 상관관계 임계값
-        volatility_threshold: float = 0.05,   # 변동성 임계값
-        stop_loss: float = 0.02,
-        take_profit: float = 0.03,
-        trailing_stop: float = 0.015
-    ):
+    def __init__(self,
+                 initial_capital: float,
+                 daily_loss_limit: float = 0.02,
+                 weekly_loss_limit: float = 0.05,
+                 monthly_loss_limit: float = 0.10,
+                 max_drawdown_limit: float = 0.15,
+                 max_positions: int = 5,
+                 max_position_size: float = 0.10,
+                 max_exposure: float = 0.30,
+                 volatility_window: int = 20,
+                 volatility_threshold: float = 0.02,
+                 trailing_stop_activation: float = 0.02,
+                 trailing_stop_distance: float = 0.01):
         """
         초기화
         
         Args:
-            initial_capital: 초기 자본금
-            max_position_size: 최대 포지션 크기 (자본금 대비 비율)
-            max_leverage: 최대 레버리지
-            max_drawdown: 최대 허용 낙폭
-            risk_per_trade: 거래당 리스크 비율
-            correlation_threshold: 상관관계 임계값
-            volatility_threshold: 변동성 임계값
-            stop_loss: 손절 비율
-            take_profit: 익절 비율
-            trailing_stop: 트레일링 스탑 비율
+            initial_capital (float): 초기 자본금
+            daily_loss_limit (float): 일일 손실 제한 (기본값: 2%)
+            weekly_loss_limit (float): 주간 손실 제한 (기본값: 5%)
+            monthly_loss_limit (float): 월간 손실 제한 (기본값: 10%)
+            max_drawdown_limit (float): 최대 손실 제한 (기본값: 15%)
+            max_positions (int): 최대 포지션 수 (기본값: 5)
+            max_position_size (float): 최대 포지션 크기 (기본값: 10%)
+            max_exposure (float): 최대 노출도 (기본값: 30%)
+            volatility_window (int): 변동성 계산 기간 (기본값: 20)
+            volatility_threshold (float): 변동성 임계값 (기본값: 2%)
+            trailing_stop_activation (float): 트레일링 스탑 활성화 수익률 (기본값: 2%)
+            trailing_stop_distance (float): 트레일링 스탑 거리 (기본값: 1%)
         """
+        self.logger = get_logger(__name__)
         self.initial_capital = initial_capital
-        self.current_capital = initial_capital
+        self.daily_loss_limit = daily_loss_limit
+        self.weekly_loss_limit = weekly_loss_limit
+        self.monthly_loss_limit = monthly_loss_limit
+        self.max_drawdown_limit = max_drawdown_limit
+        self.max_positions = max_positions
         self.max_position_size = max_position_size
-        self.max_leverage = max_leverage
-        self.max_drawdown = max_drawdown
-        self.risk_per_trade = risk_per_trade
-        self.correlation_threshold = correlation_threshold
+        self.max_exposure = max_exposure
+        self.volatility_window = volatility_window
         self.volatility_threshold = volatility_threshold
+        self.trailing_stop_activation = trailing_stop_activation
+        self.trailing_stop_distance = trailing_stop_distance
         
-        # 포지션 및 손익 기록
-        self.positions: List[Dict] = []
-        self.trades: List[Dict] = []
-        self.daily_pnl: List[float] = []
+        self._reset_metrics()
         
-        # 최고점 기록
-        self.peak_capital = initial_capital
-        self.current_drawdown = 0.0
+    def _reset_metrics(self) -> None:
+        """리스크 지표 초기화"""
+        self.current_capital = self.initial_capital
+        self.daily_loss = 0.0
+        self.weekly_loss = 0.0
+        self.monthly_loss = 0.0
+        self.max_drawdown = 0.0
+        self.peak_capital = self.initial_capital
+        self.positions = {}
+        self.trailing_stops = {}
         
-        self.db = DatabaseManager()
-        self.logger = logging.getLogger(__name__)
+    def calculate_position_size(self, price: float, risk_per_trade: float) -> float:
+        """
+        포지션 크기 계산
         
-        # 리스크 파라미터
-        self.max_position_size = 0.05  # 초기 자본의 5%
-        self.stop_loss = stop_loss
-        self.take_profit = take_profit
-        self.trailing_stop = trailing_stop
-        self.daily_loss_limit = 0.05  # 5%
+        Args:
+            price (float): 현재 가격
+            risk_per_trade (float): 거래당 리스크
+            
+        Returns:
+            float: 포지션 크기
+        """
+        max_position_value = self.current_capital * self.max_position_size
+        position_size = max_position_value / price
         
+        # 리스크 기반 포지션 크기 조정
+        risk_adjusted_size = (self.current_capital * risk_per_trade) / price
+        
+        return min(position_size, risk_adjusted_size)
+        
+    def update_trailing_stop(self, symbol: str, current_price: float) -> Optional[float]:
+        """
+        트레일링 스탑 업데이트
+        
+        Args:
+            symbol (str): 심볼
+            current_price (float): 현재 가격
+            
+        Returns:
+            Optional[float]: 트레일링 스탑 가격
+        """
+        if symbol not in self.positions:
+            return None
+            
+        position = self.positions[symbol]
+        entry_price = position['entry_price']
+        
+        # 트레일링 스탑이 없는 경우 초기화
+        if symbol not in self.trailing_stops:
+            self.trailing_stops[symbol] = entry_price * (1 - self.trailing_stop_distance)
+            
+        # 수익이 활성화 수준을 넘으면 트레일링 스탑 업데이트
+        profit_pct = (current_price - entry_price) / entry_price
+        if profit_pct >= self.trailing_stop_activation:
+            new_stop = current_price * (1 - self.trailing_stop_distance)
+            self.trailing_stops[symbol] = max(new_stop, self.trailing_stops[symbol])
+            
+        return self.trailing_stops[symbol]
+        
+    def check_trading_status(self) -> bool:
+        """
+        거래 가능 상태 확인
+        
+        Returns:
+            bool: 거래 가능 여부
+        """
+        # 손실 제한 확인
+        if abs(self.daily_loss) >= self.daily_loss_limit * self.initial_capital:
+            self.logger.warning("일일 손실 제한 도달")
+            return False
+            
+        if abs(self.weekly_loss) >= self.weekly_loss_limit * self.initial_capital:
+            self.logger.warning("주간 손실 제한 도달")
+            return False
+            
+        if abs(self.monthly_loss) >= self.monthly_loss_limit * self.initial_capital:
+            self.logger.warning("월간 손실 제한 도달")
+            return False
+            
+        # 최대 손실 확인
+        if self.max_drawdown >= self.max_drawdown_limit:
+            self.logger.warning("최대 손실 제한 도달")
+            return False
+            
+        # 포지션 수 확인
+        if len(self.positions) >= self.max_positions:
+            self.logger.warning("최대 포지션 수 도달")
+            return False
+            
+        return True
+        
+    def update_risk_metrics(self, pnl: float) -> None:
+        """
+        리스크 지표 업데이트
+        
+        Args:
+            pnl (float): 손익
+        """
+        self.current_capital += pnl
+        
+        # 손실 업데이트
+        if pnl < 0:
+            self.daily_loss += abs(pnl)
+            self.weekly_loss += abs(pnl)
+            self.monthly_loss += abs(pnl)
+            
+        # 최대 손실 업데이트
+        if self.current_capital > self.peak_capital:
+            self.peak_capital = self.current_capital
+        else:
+            drawdown = (self.peak_capital - self.current_capital) / self.peak_capital
+            self.max_drawdown = max(self.max_drawdown, drawdown)
+            
+    def get_risk_metrics(self) -> Dict[str, Any]:
+        """
+        리스크 지표 조회
+        
+        Returns:
+            Dict[str, Any]: 리스크 지표
+        """
+        return {
+            'current_capital': self.current_capital,
+            'daily_loss': self.daily_loss,
+            'weekly_loss': self.weekly_loss,
+            'monthly_loss': self.monthly_loss,
+            'max_drawdown': self.max_drawdown,
+            'peak_capital': self.peak_capital,
+            'positions': len(self.positions),
+            'trailing_stops': self.trailing_stops.copy()
+        }
+
     def calculate_position_size(
         self,
         entry_price: float,

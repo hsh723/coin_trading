@@ -1,13 +1,13 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any, Optional
 import pandas as pd
-import numpy as np
-from .base_strategy import BaseStrategy
+from src.strategy.base_strategy import BaseStrategy
 from src.analysis.indicators.technical import TechnicalIndicators
+from src.utils.logger import get_logger
 
 class MomentumStrategy(BaseStrategy):
-    """모멘텀 기반 거래 전략"""
+    """모멘텀 전략 클래스"""
     
-    def __init__(self, 
+    def __init__(self,
                  rsi_period: int = 14,
                  rsi_overbought: float = 70,
                  rsi_oversold: float = 30,
@@ -21,23 +21,18 @@ class MomentumStrategy(BaseStrategy):
         self.macd_fast = macd_fast
         self.macd_slow = macd_slow
         self.macd_signal = macd_signal
-        self._state = {}
         
     def initialize(self, data: pd.DataFrame) -> None:
         """전략 초기화"""
-        super().initialize(data)
         self._state = {
-            'initialized': True,
             'last_signal': None,
-            'position': None
+            'position': 0,
+            'entry_price': 0.0
         }
         
     def analyze(self, data: pd.DataFrame) -> Dict[str, Any]:
         """시장 분석"""
-        # RSI 계산
         rsi = TechnicalIndicators.calculate_rsi(data['close'], self.rsi_period)
-        
-        # MACD 계산
         macd, signal = TechnicalIndicators.calculate_macd(
             data['close'],
             self.macd_fast,
@@ -52,57 +47,55 @@ class MomentumStrategy(BaseStrategy):
         }
         
     def generate_signals(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """거래 신호 생성"""
-        super().generate_signals(data)
+        """매매 신호 생성"""
         analysis = self.analyze(data)
-        latest = {
-            'price': data['close'].iloc[-1],
-            'rsi': analysis['rsi'].iloc[-1],
-            'macd': analysis['macd'].iloc[-1],
-            'signal': analysis['signal'].iloc[-1]
-        }
+        latest = data.iloc[-1]
         
-        # 매수 조건: RSI가 과매도 구간을 벗어나고 MACD가 시그널 라인을 상향 돌파
         buy_signal = (
-            latest['rsi'] > self.rsi_oversold and
-            latest['macd'] > latest['signal'] and
-            analysis['macd'].iloc[-2] <= analysis['signal'].iloc[-2]
+            (analysis['rsi'].iloc[-1] > self.rsi_oversold) &
+            (analysis['macd'].iloc[-1] > analysis['signal'].iloc[-1]) &
+            (analysis['macd'].iloc[-2] <= analysis['signal'].iloc[-2])
         )
         
-        # 매도 조건: RSI가 과매수 구간을 벗어나고 MACD가 시그널 라인을 하향 돌파
         sell_signal = (
-            latest['rsi'] < self.rsi_overbought and
-            latest['macd'] < latest['signal'] and
-            analysis['macd'].iloc[-2] >= analysis['signal'].iloc[-2]
+            (analysis['rsi'].iloc[-1] < self.rsi_overbought) &
+            (analysis['macd'].iloc[-1] < analysis['signal'].iloc[-1]) &
+            (analysis['macd'].iloc[-2] >= analysis['signal'].iloc[-2])
         )
         
         return {
-            'buy': buy_signal,
-            'sell': sell_signal,
-            'analysis': latest
+            'buy_signal': buy_signal,
+            'sell_signal': sell_signal,
+            'price': latest['close'],
+            'analysis': {
+                'rsi': analysis['rsi'].iloc[-1],
+                'macd': analysis['macd'].iloc[-1],
+                'signal': analysis['signal'].iloc[-1]
+            }
         }
         
-    def execute(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """거래 실행"""
+    def execute(self, data: pd.DataFrame, position: Optional[float] = None) -> Dict[str, Any]:
+        """매매 실행"""
         signals = self.generate_signals(data)
         
-        if signals['buy'] and self._state['position'] is None:
-            self._state['position'] = 'long'
-            return {'action': 'buy', 'price': data['close'].iloc[-1]}
-        elif signals['sell'] and self._state['position'] == 'long':
-            self._state['position'] = None
-            return {'action': 'sell', 'price': data['close'].iloc[-1]}
-            
-        return {'action': 'hold'}
+        if position is None or position == 0:
+            if signals['buy_signal']:
+                return {'action': 'buy', 'amount': 1.0}
+        else:
+            if signals['sell_signal']:
+                return {'action': 'sell', 'amount': position}
+                
+        return {'action': 'hold', 'amount': 0.0}
         
     def update(self, data: pd.DataFrame) -> None:
         """전략 상태 업데이트"""
-        self._state['last_signal'] = self.generate_signals(data)
+        signals = self.generate_signals(data)
+        self._state['last_signal'] = signals
         
     def get_state(self) -> Dict[str, Any]:
-        """전략 상태 조회"""
-        return self._state.copy()
+        """전략 상태 반환"""
+        return self._state
         
     def set_state(self, state: Dict[str, Any]) -> None:
         """전략 상태 설정"""
-        self._state = state.copy() 
+        self._state = state 
