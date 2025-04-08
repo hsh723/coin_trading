@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import asyncio
 from typing import Dict, List, Any, Optional
+import sys
 
 from src.analysis.technical_analyzer import TechnicalAnalyzer
 from src.analysis.self_learning import SelfLearningSystem
