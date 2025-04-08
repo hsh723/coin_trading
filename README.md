@@ -1,118 +1,159 @@
-# 통합 트레이딩 시스템
+# 암호화폐 트레이딩 봇
 
-이 프로젝트는 여러 기술적 지표와 패턴을 통합하여 암호화폐 트레이딩을 자동화하는 시스템입니다.
+암호화폐 시장에서 자동화된 트레이딩을 수행하는 봇입니다. 기술적 분석, 백테스팅, 최적화, 알림 시스템 등을 포함한 종합적인 트레이딩 솔루션을 제공합니다.
 
-## 주요 특징
+## 주요 기능
 
-### 1. 통합된 기술적 분석
-- 이동평균선 (20일, 60일, 200일)
-- 볼린저 밴드
-- RSI
-- 스토캐스틱
-- ABC 패턴
-- 추세선 분석
-- 캔들 패턴 분석
+### 1. 기술적 분석
+- RSI, MACD, 볼린저 밴드 등 다양한 기술적 지표 분석
+- 실시간 시장 데이터 모니터링
+- 차트 분석 및 시각화
 
-### 2. 정교한 진입 조건
-- 추세선 터치/근접 판단 (0.2% 이내)
-- 볼린저 밴드 터치/돌파 판단
-- RSI 과매수/과매도
-- 캔들 패턴 분석
-- 거래량 분석
-- 가격 모멘텀 분석
+### 2. 백테스팅
+- 과거 데이터 기반 전략 테스트
+- 다양한 성과 지표 분석
+- 자본금 곡선 및 낙폭 분석
 
-### 3. 리스크 관리
-- 첫 진입은 전체 포지션의 50%만 사용
-- 추가 진입은 B 포인트 돌파 시
-- 손절/익절 15%
-- 최대 보유 시간 2시간
-- 추세 반전 시 청산
+### 3. 전략 최적화
+- 파라미터 그리드 서치
+- 유전 알고리즘 기반 최적화
+- 성과 메트릭스 분석
 
-### 4. 신호 강도 시스템
-- 추세선 터치: 0.3점
-- 볼린저 밴드 터치: 0.2점
-- RSI 조건: 0.2점
-- 가격 행동: 각각 0.1점씩
+### 4. 알림 시스템
+- 텔레그램 통합
+- 사용자 정의 알림 규칙
+- 실시간 거래 알림
+
+### 5. 백업 및 복구
+- 데이터베이스 백업
+- 설정 파일 백업
+- 로그 파일 백업
+- 전략 파일 백업
+
+### 6. 성능 모니터링
+- CPU, 메모리, 디스크 사용량 모니터링
+- 네트워크 I/O 모니터링
+- 프로세스 및 스레드 모니터링
+- 경고 시스템
 
 ## 설치 방법
 
-1. 저장소 클론:
+1. 저장소 클론
 ```bash
-git clone [repository-url]
-cd coin-trading
+git clone https://github.com/hsh723/coin_trading.git
+cd coin_trading
 ```
 
-2. 가상환경 생성 및 활성화:
+2. 가상환경 생성 및 활성화
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 ```
 
-3. 필요한 패키지 설치:
+3. 의존성 설치
 ```bash
 pip install -r requirements.txt
 ```
 
-4. 환경 변수 설정:
-`.env` 파일을 생성하고 다음 내용을 추가:
-```
-BINANCE_API_KEY=your_api_key
-BINANCE_API_SECRET=your_api_secret
+4. 환경 변수 설정
+```bash
+cp .env.example .env
+# .env 파일을 편집하여 API 키 등 설정
 ```
 
 ## 사용 방법
 
-1. 트레이더 실행:
+1. Streamlit 웹 인터페이스 실행
 ```bash
-python src/run_integrated_trader.py
+streamlit run streamlit_app.py
 ```
 
-2. 백테스팅 실행:
-```bash
-python src/backtest_integrated_strategy.py
-```
+2. 웹 브라우저에서 `http://localhost:8501` 접속
 
 ## 프로젝트 구조
 
 ```
-coin-trading/
+coin_trading/
 ├── src/
-│   ├── strategies/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   └── integrated_strategy.py
-│   ├── traders/
-│   │   ├── __init__.py
-│   │   └── integrated_trader.py
+│   ├── analysis/
+│   │   ├── technical_analyzer.py
+│   │   └── self_learning.py
+│   ├── strategy/
+│   │   ├── base_strategy.py
+│   │   └── portfolio_manager.py
+│   ├── backtest/
+│   │   ├── backtest_engine.py
+│   │   └── backtest_analyzer.py
+│   ├── dashboard/
+│   │   └── dashboard.py
 │   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── data_loader.py
-│   │   └── risk_manager.py
-│   ├── run_integrated_trader.py
-│   └── backtest_integrated_strategy.py
-├── tests/
-│   ├── __init__.py
-│   ├── test_strategy.py
-│   └── test_trader.py
+│   │   ├── config.py
+│   │   ├── logger.py
+│   │   └── performance_monitor.py
+│   ├── api/
+│   │   └── api_manager.py
+│   ├── backup/
+│   │   └── backup_manager.py
+│   ├── optimization/
+│   │   └── optimizer.py
+│   ├── notification/
+│   │   ├── telegram_notifier.py
+│   │   └── notification_manager.py
+│   ├── database/
+│   │   └── database_manager.py
+│   └── exchange/
+│       └── binance_exchange.py
+├── config/
+│   └── config.yaml
+├── data/
+│   └── market_data.csv
 ├── logs/
-├── .env
+├── backup/
 ├── requirements.txt
-└── README.md
+├── .env
+└── streamlit_app.py
 ```
 
-## 로깅
+## 주요 모듈 설명
 
-모든 거래 기록은 `logs/integrated_trader.log`에 저장됩니다:
-- 진입/청산 시점
-- 진입/청산 사유
-- 포지션 크기
-- 수익/손실
-- 신호 강도
+### 1. 분석 모듈
+- `technical_analyzer.py`: 기술적 지표 계산 및 분석
+- `self_learning.py`: 머신러닝 기반 시장 분석
 
-## 주의사항
+### 2. 전략 모듈
+- `base_strategy.py`: 기본 전략 클래스
+- `portfolio_manager.py`: 포트폴리오 관리
 
-- 실제 거래 전에 반드시 백테스팅을 수행하세요.
-- API 키는 안전하게 보관하세요.
-- 리스크 관리 규칙을 준수하세요.
-- 시장 상황에 따라 전략을 조정하세요. 
+### 3. 백테스팅 모듈
+- `backtest_engine.py`: 백테스팅 엔진
+- `backtest_analyzer.py`: 백테스팅 결과 분석
+
+### 4. 유틸리티 모듈
+- `config.py`: 설정 관리
+- `logger.py`: 로깅 시스템
+- `performance_monitor.py`: 시스템 성능 모니터링
+
+### 5. API 모듈
+- `api_manager.py`: 거래소 API 통합
+
+### 6. 백업 모듈
+- `backup_manager.py`: 데이터 백업 및 복구
+
+### 7. 최적화 모듈
+- `optimizer.py`: 전략 파라미터 최적화
+
+### 8. 알림 모듈
+- `telegram_notifier.py`: 텔레그램 알림
+- `notification_manager.py`: 알림 규칙 관리
+
+## 라이센스
+
+MIT License
+
+## 기여 방법
+
+1. 이슈 생성
+2. 브랜치 생성
+3. 변경사항 커밋
+4. 풀 리퀘스트 생성 
