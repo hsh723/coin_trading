@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  trading_bot:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+  web_interface:
+    build: .
+    command: streamlit run run_web.py
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+networks:
+  trading_network:
+    driver: bridge

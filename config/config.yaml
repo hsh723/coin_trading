@@ -1,0 +1,211 @@
+# 데이터베이스 설정
+database:
+  path: "data/trading.db"
+  backup_dir: "data/backups"
+  backup_interval: 24  # 시간 단위
+  max_backups: 7  # 최대 백업 파일 수
+  encryption_key: "your-secret-key-here"  # 실제 운영 환경에서는 환경 변수로 관리
+  type: sqlite
+  tables:
+    market_data:
+      name: market_data
+      columns:
+        - timestamp
+        - symbol
+        - open
+        - high
+        - low
+        - close
+        - volume
+        - spread
+        - funding_rate
+        - open_interest
+        - liquidation
+    positions:
+      name: positions
+      columns:
+        - id
+        - symbol
+        - side
+        - entry_price
+        - size
+        - stop_loss
+        - take_profit
+        - entry_time
+        - strategy
+    trades:
+      name: trades
+      columns:
+        - id
+        - symbol
+        - side
+        - entry_price
+        - exit_price
+        - size
+        - pnl
+        - entry_time
+        - exit_time
+        - strategy
+
+# 거래소 설정
+exchange:
+  name: "binance"  # binance, upbit
+  testnet: true    # 테스트넷 사용 여부
+  api_key: "your-api-key"
+  api_secret: "your-api-secret"
+
+# 트레이딩 설정
+trading:
+  initial_capital: 10000.0  # 초기 자본금 (USDT)
+  symbols:  # 거래할 심볼 목록
+    - "BTCUSDT"
+    - "ETHUSDT"
+    - "BNBUSDT"
+    - "ADAUSDT"
+    - "DOGEUSDT"
+  timeframes:  # 거래 시간대
+    - "1h"
+    - "4h"
+    - "1d"
+  interval: 60  # 거래 체크 주기 (초)
+  stop_loss: 0.02  # 손절 비율 (2%)
+  take_profit: 0.04  # 익절 비율 (4%)
+  max_positions: 5  # 최대 포지션 수
+  position_size: 0.2  # 포지션 크기 (자본금의 20%)
+  min_volume: 1000000  # 최소 거래량 (USDT)
+  max_spread: 0.002  # 최대 허용 스프레드 (0.2%)
+  max_position_size: 0.1
+  max_leverage: 3
+  max_drawdown: 0.2
+  risk_per_trade: 0.01
+  min_capital: 1000
+  volatility_threshold: 0.05
+
+# 백테스트 설정
+backtest:
+  initial_capital: 10000.0
+  start_date: "2023-01-01"
+  end_date: "2023-12-31"
+  symbols:
+    - "BTCUSDT"
+    - "ETHUSDT"
+    - "BNBUSDT"
+    - "ADAUSDT"
+    - "DOGEUSDT"
+  timeframes:
+    - "1h"
+    - "4h"
+    - "1d"
+
+# 시뮬레이션 설정
+simulation:
+  speed: 1.0  # 시뮬레이션 속도 (1.0 = 실시간)
+  save_data: true  # 데이터 저장 여부
+  results_dir: "data/simulation_results"  # 결과 저장 디렉토리
+  initial_capital: 10000
+
+# 포트폴리오 설정
+portfolio:
+  rebalance_period: 7  # 리밸런싱 주기 (일)
+  min_weight: 0.1  # 최소 자산 비중
+  max_weight: 0.4  # 최대 자산 비중
+  risk_free_rate: 0.02  # 무위험 수익률 (연간 2%)
+
+# 텔레그램 설정
+telegram:
+  bot_token: "your-bot-token"
+  chat_id: "your-chat-id"
+  notifications:
+    trade: true  # 거래 알림
+    error: true  # 오류 알림
+    daily_report: true  # 일일 리포트
+    portfolio_update: true  # 포트폴리오 업데이트
+    position: true
+    risk: true
+
+# 로깅 설정
+logging:
+  level: "INFO"
+  file: "logs/trading.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 성능 분석 설정
+performance_analysis:
+  min_samples: 100
+  training_interval: 24  # 시간 단위
+  indicators:
+    ma_short: 5
+    ma_long: 20
+    rsi_period: 14
+    rsi_upper: 70
+    rsi_lower: 30
+    bb_period: 20
+    bb_std: 2
+  thresholds:
+    volatility: 0.02
+    volume: 1000000
+    sentiment: -0.5
+
+# 뉴스 분석 설정
+news_analysis:
+  sources:
+    - "coindesk"
+    - "cointelegraph"
+    - "bitcoinist"
+  update_interval: 1  # 시간 단위
+  sentiment_threshold: -0.5
+  keywords:
+    positive:
+      - "bullish"
+      - "surge"
+      - "rally"
+      - "breakout"
+    negative:
+      - "bearish"
+      - "crash"
+      - "dump"
+      - "selloff"
+    categories:
+      - "bitcoin"
+      - "ethereum"
+      - "regulation"
+      - "technology"
+      - "market"
+
+# API 설정
+api:
+  # 거래소 API 키
+  exchanges:
+    - binance
+    - bybit
+    - kucoin
+    - okx
+    - gateio
+  
+  # Binance API 키
+  binance_api_key: ${BINANCE_API_KEY}
+  binance_api_secret: ${BINANCE_API_SECRET}
+  
+  # Bybit API 키
+  bybit_api_key: ${BYBIT_API_KEY}
+  bybit_api_secret: ${BYBIT_API_SECRET}
+  
+  # KuCoin API 키
+  kucoin_api_key: ${KUCOIN_API_KEY}
+  kucoin_api_secret: ${KUCOIN_API_SECRET}
+  
+  # OKX API 키
+  okx_api_key: ${OKX_API_KEY}
+  okx_api_secret: ${OKX_API_SECRET}
+  
+  # Gate.io API 키
+  gateio_api_key: ${GATEIO_API_KEY}
+  gateio_api_secret: ${GATEIO_API_SECRET}
+  
+  # 뉴스 API 키
+  news_api_key: ${NEWS_API_KEY}
+  
+  # 감성 분석 API 키
+  sentiment_api_key: ${SENTIMENT_API_KEY} 

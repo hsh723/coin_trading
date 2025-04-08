@@ -1,0 +1,137 @@
+# 거래소 설정
+exchange:
+  name: 'binance'
+  testnet: true
+  api_key: ''
+  api_secret: ''
+
+# 거래 설정
+trading:
+  initial_capital: 10000  # USDT
+  leverage: 1
+  position_size: 0.1  # 자본의 10%
+  max_positions: 3
+  stop_loss: 0.02  # 2%
+  take_profit: 0.04  # 4%
+
+# 백테스트 설정
+backtest:
+  initial_capital: 10000  # USDT
+  start_date: '2024-01-01'
+  end_date: '2024-03-01'
+  symbols: ['BTC/USDT', 'ETH/USDT']
+  timeframes: ['1h', '4h']
+
+# 시뮬레이션 설정
+simulation:
+  speed: 1.0  # 실시간 속도
+  initial_capital: 10000  # USDT
+
+# 텔레그램 알림 설정
+telegram:
+  notifications:
+    trade: true
+    error: true
+    performance: true
+
+# 로깅 설정
+logging:
+  level: 'INFO'
+  file: 'logs/trading.log'
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+# 데이터베이스 설정
+database:
+  path: 'data/trading.db'
+  backup_path: 'data/backups/'
+
+# 뉴스 분석 설정
+news:
+  sources:
+    - 'cryptopanic'
+    - 'coindesk'
+    - 'cointelegraph'
+  update_interval: 3600  # 1시간
+  sentiment_threshold: 0.5
+
+# 성능 분석 설정
+performance:
+  min_trades: 10
+  evaluation_period: 7  # 일
+  risk_free_rate: 0.01  # 1%
+
+# 트레이딩 설정
+trading:
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - BNB/USDT
+  timeframe: 1h
+  historical_data_limit: 100
+  risk:
+    # 손실 한도
+    daily_loss_limit: 0.02  # 일일 최대 손실 (자본의 2%)
+    weekly_loss_limit: 0.05  # 주간 최대 손실 (자본의 5%)
+    monthly_loss_limit: 0.1  # 월간 최대 손실 (자본의 10%)
+    max_drawdown_limit: 0.15  # 최대 낙폭 (자본의 15%)
+    
+    # 포지션 한도
+    max_positions: 5  # 최대 동시 포지션 수
+    max_position_size: 0.1  # 최대 포지션 크기 (자본의 10%)
+    max_exposure: 0.3  # 최대 총 노출 (자본의 30%)
+    
+    # 변동성 모니터링
+    volatility_window: 20  # 변동성 계산 기간
+    volatility_threshold: 0.02  # 변동성 임계값 (2%)
+    
+    # 트레일링 스탑 로스
+    trailing_stop:
+      activation: 0.02  # 활성화 기준 (수익률 2%)
+      distance: 0.01  # 스탑 거리 (1%)
+
+# 시뮬레이션 설정
+simulation:
+  slippage: 0.001  # 슬리피지 (0.1%)
+  partial_fill_probability: 0.3  # 부분 체결 확률 (30%)
+  market_volatility: 1.0  # 시장 변동성
+  position_size_limit: 0.1  # 최대 포지션 크기 (자본의 10%)
+  max_daily_loss: 0.05  # 최대 일일 손실 (자본의 5%)
+  memory_limit: 1000  # 거래 기록 최대 개수
+  log_level: INFO  # 로깅 레벨 (DEBUG, INFO, WARNING, ERROR)
+  save_trade_history: true  # 거래 내역 저장 여부
+  performance_report_interval: 3600  # 성과 보고 간격 (초)
+  memory_management:
+    check_interval: 300  # 메모리 사용량 확인 간격 (초)
+    threshold: 0.8  # 메모리 사용량 임계값 (80%)
+    max_history: 1000  # 메모리 사용량 기록 최대 개수
+    cleanup_threshold: 0.9  # 데이터 정리 임계값 (90%)
+
+# 백테스트 설정
+backtest:
+  commission: 0.001  # 수수료 (0.1%)
+  save_results: true  # 결과 저장 여부
+  visualization:
+    enabled: true  # 시각화 활성화
+    format: "html"  # 시각화 형식
+    metrics:  # 표시할 지표
+      - total_return
+      - win_rate
+      - max_drawdown
+      - sharpe_ratio
+      - total_trades
+      - winning_trades
+      - losing_trades
+      - average_return
+      - return_std
+    charts:  # 표시할 차트
+      - equity_curve
+      - returns
+      - drawdown
+      - monthly_returns
+
+# 텔레그램 알림 설정
+telegram:
+  bot_token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  report_format: markdown  # 보고서 형식 
