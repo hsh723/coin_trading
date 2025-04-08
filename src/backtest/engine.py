@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 import json
 import os
-from ..strategy.base_strategy import BaseStrategy as Strategy
+from ..strategy.base_strategy import BaseStrategy
 from ..utils.logger import setup_logger
 from ..strategies.integrated_strategy import IntegratedStrategy
 from ..trading.risk_manager import RiskManager
@@ -33,6 +33,8 @@ from src.backtest.visualization import BacktestVisualizer
 from src.trading.strategy import IntegratedStrategy
 from src.backtest.data import BacktestData
 from src.trading.simulation import TradingSimulator, SimulationConfig
+from ..data.collector import DataCollector
+from ..data.processor import DataProcessor
 
 @dataclass
 class BacktestMetrics:
@@ -66,7 +68,7 @@ class Backtester:
     
     def __init__(
         self,
-        strategy: Strategy,
+        strategy: BaseStrategy,
         initial_capital: float = 10000.0,
         commission: float = 0.001,  # 0.1%
         slippage: float = 0.001,    # 0.1%
@@ -77,7 +79,7 @@ class Backtester:
         백테스터 초기화
         
         Args:
-            strategy (Strategy): 테스트할 전략
+            strategy (BaseStrategy): 테스트할 전략
             initial_capital (float): 초기 자본금
             commission (float): 거래 수수료
             slippage (float): 슬리피지
@@ -496,368 +498,378 @@ class Backtester:
             raise
 
 class BacktestEngine:
-    """
-    백테스트 엔진 클래스
-    """
+    """백테스팅 엔진 클래스"""
     
-    def __init__(self, strategy: IntegratedStrategy, config: Dict[str, Any]):
-        """
-        백테스트 엔진 초기화
-        
-        Args:
-            strategy (IntegratedStrategy): 거래 전략
-            config (Dict[str, Any]): 설정 정보
-        """
-        self.strategy = strategy
-        self.config = config
-        self.logger = setup_logger()
-        
-        # 백테스트 상태
-        self.is_running = False
-        self.current_capital = config['backtest']['initial_capital']
-        self.positions = {}
-        self.trades = []
-        self.equity_curve = pd.Series()
-        
-        # 시각화기 초기화
-        self.visualizer = BacktestVisualizer()
-        
-    async def initialize(self):
-        """백테스트 엔진 초기화"""
-        try:
-            self.logger.info("백테스트 엔진 초기화")
-            await self.strategy.initialize()
-        except Exception as e:
-            self.logger.error(f"백테스트 엔진 초기화 실패: {str(e)}")
-            raise
-            
-    async def close(self):
-        """백테스트 엔진 종료"""
-        try:
-            self.logger.info("백테스트 엔진 종료")
-            await self.strategy.close()
-        except Exception as e:
-            self.logger.error(f"백테스트 엔진 종료 실패: {str(e)}")
-            raise
-            
-    async def run(
+    def __init__(
         self,
-        symbol: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime
-    ) -> Dict[str, Any]:
-        """
-        백테스트 실행
-        
-        Args:
-            symbol (str): 거래 심볼
-            timeframe (str): 시간대
-            start_date (datetime): 시작 날짜
-            end_date (datetime): 종료 날짜
-            
-        Returns:
-            Dict[str, Any]: 백테스트 결과
-        """
-        try:
-            self.is_running = True
-            self.logger.info(f"백테스트 시작: {symbol} {timeframe}")
-            
-            # 초기 자본금 설정
-            self.current_capital = self.config['backtest']['initial_capital']
-            self.positions = {}
-            self.trades = []
-            self.equity_curve = pd.Series()
-            
-            # 시장 데이터 수집
-            market_data = await self.strategy.get_market_data(
-                symbol,
-                timeframe,
-                start_date,
-                end_date
-            )
-            
-            # 백테스트 실행
-            for i in range(len(market_data)):
-                if not self.is_running:
-                    break
-                    
-                current_data = market_data.iloc[i]
-                
-                # 거래 신호 생성
-                signal = await self.strategy.generate_signal(current_data)
-                
-                if signal:
-                    # 주문 실행
-                    await self._execute_trade(signal, current_data)
-                    
-                # 포지션 모니터링
-                await self._monitor_positions(current_data)
-                
-                # 자본금 곡선 업데이트
-                self._update_equity_curve(current_data.name)
-                
-            # 성과 지표 계산
-            results = self._calculate_metrics()
-            
-            # 결과 시각화
-            report_file = self.visualizer.generate_report(
-                results,
-                symbol,
-                timeframe
-            )
-            
-            self.logger.info(f"백테스트 완료: {report_file}")
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"백테스트 실행 실패: {str(e)}")
-            raise
-        finally:
-            self.is_running = False
-            
-    async def _execute_trade(self, signal: Dict[str, Any], market_data: pd.Series):
-        """
-        거래 실행
-        
-        Args:
-            signal (Dict[str, Any]): 거래 신호
-            market_data (pd.Series): 시장 데이터
-        """
-        try:
-            # 포지션 크기 계산
-            size = self._calculate_position_size(signal)
-            
-            # 주문 실행
-            if signal['side'] == 'buy':
-                if signal['symbol'] in self.positions:
-                    # 포지션 청산
-                    await self._close_position(
-                        signal['symbol'],
-                        market_data['close'],
-                        'close'
-                    )
-                # 롱 포지션 진입
-                self.positions[signal['symbol']] = {
-                    'side': 'buy',
-                    'size': size,
-                    'entry_price': market_data['close'],
-                    'entry_time': market_data.name
-                }
-            else:
-                if signal['symbol'] in self.positions:
-                    # 포지션 청산
-                    await self._close_position(
-                        signal['symbol'],
-                        market_data['close'],
-                        'close'
-                    )
-                # 숏 포지션 진입
-                self.positions[signal['symbol']] = {
-                    'side': 'sell',
-                    'size': size,
-                    'entry_price': market_data['close'],
-                    'entry_time': market_data.name
-                }
-                
-        except Exception as e:
-            self.logger.error(f"거래 실행 실패: {str(e)}")
-            raise
-            
-    async def _monitor_positions(self, market_data: pd.Series):
-        """
-        포지션 모니터링
-        
-        Args:
-            market_data (pd.Series): 시장 데이터
-        """
-        try:
-            for symbol, position in list(self.positions.items()):
-                # 손익 계산
-                pnl = self._calculate_pnl(position, market_data['close'])
-                
-                # 손절/익절 확인
-                if pnl <= -self.config['trading']['stop_loss']:
-                    await self._close_position(
-                        symbol,
-                        market_data['close'],
-                        'stop_loss'
-                    )
-                elif pnl >= self.config['trading']['take_profit']:
-                    await self._close_position(
-                        symbol,
-                        market_data['close'],
-                        'take_profit'
-                    )
-                    
-        except Exception as e:
-            self.logger.error(f"포지션 모니터링 실패: {str(e)}")
-            raise
-            
-    async def _close_position(
-        self,
-        symbol: str,
-        price: float,
-        reason: str
+        strategy: BaseStrategy,
+        data: pd.DataFrame,
+        initial_capital: float = 10000.0,
+        commission: float = 0.0004,
+        slippage: float = 0.0001,
+        leverage: float = 1.0
     ):
         """
-        포지션 청산
+        백테스팅 엔진 초기화
         
         Args:
-            symbol (str): 거래 심볼
-            price (float): 청산 가격
-            reason (str): 청산 사유
+            strategy (BaseStrategy): 사용할 트레이딩 전략
+            data (pd.DataFrame): OHLCV 데이터
+            initial_capital (float): 초기 자본금
+            commission (float): 거래 수수료 비율
+            slippage (float): 슬리피지 비율
+            leverage (float): 레버리지
         """
-        try:
-            position = self.positions[symbol]
-            
-            # 손익 계산
-            pnl = self._calculate_pnl(position, price)
-            
-            # 거래 기록 추가
-            self.trades.append({
-                'symbol': symbol,
-                'side': position['side'],
-                'size': position['size'],
-                'entry_price': position['entry_price'],
-                'exit_price': price,
-                'entry_time': position['entry_time'],
-                'exit_time': datetime.now(),
-                'pnl': pnl,
-                'reason': reason
-            })
-            
-            # 자본금 업데이트
-            self.current_capital += pnl
-            
-            # 포지션 제거
-            del self.positions[symbol]
-            
-        except Exception as e:
-            self.logger.error(f"포지션 청산 실패: {str(e)}")
-            raise
-            
-    def _calculate_position_size(self, signal: Dict[str, Any]) -> float:
+        self.strategy = strategy
+        self.data = data
+        self.initial_capital = initial_capital
+        self.commission = commission
+        self.slippage = slippage
+        self.leverage = leverage
+        
+        self.logger = setup_logger()
+        self.risk_manager = RiskManager()
+        
+        # 백테스팅 결과 저장
+        self.results = {}
+        self.trades = []
+        self.positions = []
+        self.equity_curve = []
+        
+    def load_data(
+        self,
+        file_path: Optional[str] = None,
+        db_connection: Optional[Any] = None
+    ) -> pd.DataFrame:
         """
-        포지션 크기 계산
+        과거 데이터 로드
         
         Args:
-            signal (Dict[str, Any]): 거래 신호
+            file_path (Optional[str]): CSV 파일 경로
+            db_connection (Optional[Any]): 데이터베이스 연결
             
         Returns:
-            float: 포지션 크기
+            pd.DataFrame: OHLCV 데이터
         """
         try:
-            # 리스크 관리 설정
-            risk_per_trade = self.config['trading']['risk_per_trade']
-            stop_loss = self.config['trading']['stop_loss']
+            if file_path:
+                df = pd.read_csv(file_path)
+            elif db_connection:
+                query = "SELECT * FROM market_data ORDER BY timestamp"
+                df = pd.read_sql(query, db_connection)
+            else:
+                raise ValueError("데이터 소스를 지정해야 합니다.")
+                
+            # 데이터 정합성 검사
+            df = self._validate_data(df)
             
-            # 포지션 크기 계산
-            size = self.current_capital * risk_per_trade / stop_loss
-            
-            return size
+            return df
             
         except Exception as e:
-            self.logger.error(f"포지션 크기 계산 실패: {str(e)}")
+            self.logger.error(f"데이터 로드 실패: {str(e)}")
             raise
             
-    def _calculate_pnl(self, position: Dict[str, Any], current_price: float) -> float:
+    def _validate_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        데이터 정합성 검사
+        
+        Args:
+            df (pd.DataFrame): 원본 데이터
+            
+        Returns:
+            pd.DataFrame: 검증된 데이터
+        """
+        try:
+            # 필수 컬럼 확인
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            if not all(col in df.columns for col in required_columns):
+                raise ValueError("필수 컬럼이 누락되었습니다.")
+                
+            # 타임스탬프 변환
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # 중복 제거
+            df = df.drop_duplicates(subset=['timestamp'])
+            
+            # 정렬
+            df = df.sort_values('timestamp')
+            
+            # 누락된 데이터 확인
+            missing_data = df.isnull().sum()
+            if missing_data.any():
+                self.logger.warning(f"누락된 데이터 발견: {missing_data}")
+                
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"데이터 검증 실패: {str(e)}")
+            raise
+            
+    def run_backtest(self) -> Dict[str, Any]:
+        """
+        백테스팅 실행
+        
+        Returns:
+            Dict[str, Any]: 백테스팅 결과
+        """
+        try:
+            self.logger.info("백테스팅 시작")
+            
+            # 초기화
+            capital = self.initial_capital
+            position = 0
+            entry_price = 0
+            
+            # 각 캔들마다 전략 실행
+            for i in range(len(self.data)):
+                current_data = self.data.iloc[i]
+                
+                # 전략 신호 생성
+                signals = self.strategy.generate_signals(current_data)
+                
+                # 포지션 관리
+                if position == 0:  # 포지션 없음
+                    if signals['buy_signal']:
+                        # 롱 포지션 진입
+                        position = 1
+                        entry_price = current_data['close'] * (1 + self.slippage)
+                        self._record_trade('buy', current_data['timestamp'], entry_price)
+                        
+                    elif signals['sell_signal']:
+                        # 숏 포지션 진입
+                        position = -1
+                        entry_price = current_data['close'] * (1 - self.slippage)
+                        self._record_trade('sell', current_data['timestamp'], entry_price)
+                        
+                else:  # 포지션 있음
+                    if (position == 1 and signals['sell_signal']) or \
+                       (position == -1 and signals['buy_signal']):
+                        # 포지션 청산
+                        exit_price = current_data['close'] * (1 - self.slippage if position == 1 else 1 + self.slippage)
+                        pnl = self._calculate_pnl(position, entry_price, exit_price)
+                        capital += pnl
+                        self._record_trade('close', current_data['timestamp'], exit_price, pnl)
+                        position = 0
+                        
+                # 자본금 곡선 업데이트
+                self.equity_curve.append({
+                    'timestamp': current_data['timestamp'],
+                    'equity': capital
+                })
+                
+            # 성과 지표 계산
+            self.results = self.calculate_metrics()
+            
+            self.logger.info("백테스팅 완료")
+            return self.results
+            
+        except Exception as e:
+            self.logger.error(f"백테스팅 실행 실패: {str(e)}")
+            raise
+            
+    def _record_trade(
+        self,
+        action: str,
+        timestamp: datetime,
+        price: float,
+        pnl: Optional[float] = None
+    ):
+        """
+        거래 기록
+        
+        Args:
+            action (str): 거래 액션 (buy/sell/close)
+            timestamp (datetime): 거래 시간
+            price (float): 거래 가격
+            pnl (Optional[float]): 손익
+        """
+        trade = {
+            'timestamp': timestamp,
+            'action': action,
+            'price': price,
+            'pnl': pnl
+        }
+        self.trades.append(trade)
+        
+    def _calculate_pnl(
+        self,
+        position: int,
+        entry_price: float,
+        exit_price: float
+    ) -> float:
         """
         손익 계산
         
         Args:
-            position (Dict[str, Any]): 포지션 정보
-            current_price (float): 현재 가격
+            position (int): 포지션 방향 (1: 롱, -1: 숏)
+            entry_price (float): 진입 가격
+            exit_price (float): 청산 가격
             
         Returns:
             float: 손익
         """
-        try:
-            if position['side'] == 'buy':
-                pnl = (current_price - position['entry_price']) * position['size']
-            else:
-                pnl = (position['entry_price'] - current_price) * position['size']
-                
-            return pnl
-            
-        except Exception as e:
-            self.logger.error(f"손익 계산 실패: {str(e)}")
-            raise
-            
-    def _update_equity_curve(self, timestamp: datetime):
-        """
-        자본금 곡선 업데이트
+        # 기본 손익 계산
+        pnl = (exit_price - entry_price) * position
         
-        Args:
-            timestamp (datetime): 시간
-        """
-        try:
-            # 미실현 손익 계산
-            unrealized_pnl = 0
-            for position in self.positions.values():
-                unrealized_pnl += self._calculate_pnl(
-                    position,
-                    position['entry_price']
-                )
-                
-            # 자본금 곡선 업데이트
-            self.equity_curve[timestamp] = self.current_capital + unrealized_pnl
-            
-        except Exception as e:
-            self.logger.error(f"자본금 곡선 업데이트 실패: {str(e)}")
-            raise
-            
-    def _calculate_metrics(self) -> Dict[str, Any]:
+        # 레버리지 적용
+        pnl *= self.leverage
+        
+        # 수수료 차감
+        commission = (entry_price + exit_price) * self.commission
+        pnl -= commission
+        
+        return pnl
+        
+    def calculate_metrics(self) -> Dict[str, float]:
         """
         성과 지표 계산
         
         Returns:
-            Dict[str, Any]: 성과 지표
+            Dict[str, float]: 성과 지표
         """
         try:
+            # 거래 데이터프레임 생성
+            trades_df = pd.DataFrame(self.trades)
+            equity_df = pd.DataFrame(self.equity_curve)
+            
             # 기본 지표
-            total_return = (self.current_capital - self.config['backtest']['initial_capital']) / self.config['backtest']['initial_capital']
-            total_trades = len(self.trades)
-            win_trades = len([t for t in self.trades if t['pnl'] > 0])
-            win_rate = win_trades / total_trades if total_trades > 0 else 0
+            total_return = (equity_df['equity'].iloc[-1] / self.initial_capital) - 1
+            annual_return = total_return / (len(equity_df) / 252)
             
-            # 수익률 계산
-            returns = pd.Series([t['pnl'] / self.config['backtest']['initial_capital'] for t in self.trades])
-            avg_return = returns.mean() if len(returns) > 0 else 0
-            return_std = returns.std() if len(returns) > 1 else 0
+            # 승률
+            winning_trades = trades_df[trades_df['pnl'] > 0]
+            win_rate = len(winning_trades) / len(trades_df) if len(trades_df) > 0 else 0
             
-            # 샤프 비율 계산
-            risk_free_rate = 0.02  # 연간 2% 가정
-            excess_returns = returns - risk_free_rate/252  # 일간 무위험 수익률
-            sharpe_ratio = np.sqrt(252) * excess_returns.mean() / excess_returns.std() if len(excess_returns) > 1 else 0
+            # 손익비
+            avg_win = winning_trades['pnl'].mean() if len(winning_trades) > 0 else 0
+            losing_trades = trades_df[trades_df['pnl'] < 0]
+            avg_loss = abs(losing_trades['pnl'].mean()) if len(losing_trades) > 0 else 0
+            profit_factor = avg_win / avg_loss if avg_loss != 0 else float('inf')
             
-            # 최대 낙폭 계산
-            rolling_max = self.equity_curve.expanding().max()
-            drawdown = (self.equity_curve - rolling_max) / rolling_max
-            max_drawdown = drawdown.min()
+            # 최대 낙폭
+            equity_df['peak'] = equity_df['equity'].cummax()
+            equity_df['drawdown'] = (equity_df['equity'] - equity_df['peak']) / equity_df['peak']
+            max_drawdown = equity_df['drawdown'].min()
             
-            # 결과 반환
-            return {
+            # 샤프 비율
+            returns = equity_df['equity'].pct_change().dropna()
+            sharpe_ratio = np.sqrt(252) * returns.mean() / returns.std()
+            
+            # 칼마 비율
+            calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown != 0 else float('inf')
+            
+            metrics = {
                 'total_return': total_return,
+                'annual_return': annual_return,
                 'win_rate': win_rate,
+                'profit_factor': profit_factor,
                 'max_drawdown': max_drawdown,
                 'sharpe_ratio': sharpe_ratio,
-                'total_trades': total_trades,
-                'avg_return': avg_return,
-                'return_std': return_std,
-                'equity_curve': self.equity_curve.to_dict(),
-                'trades': self.trades
+                'calmar_ratio': calmar_ratio
             }
+            
+            return metrics
             
         except Exception as e:
             self.logger.error(f"성과 지표 계산 실패: {str(e)}")
             raise
             
-    def get_results(self) -> Dict[str, Any]:
+    def generate_report(self) -> str:
         """
-        백테스트 결과 조회
+        백테스팅 리포트 생성
         
         Returns:
-            Dict[str, Any]: 백테스트 결과
+            str: 리포트 내용
         """
-        return self._calculate_metrics() 
+        try:
+            report = []
+            report.append("=== 백테스팅 리포트 ===")
+            report.append(f"기간: {self.data['timestamp'].iloc[0]} ~ {self.data['timestamp'].iloc[-1]}")
+            report.append(f"초기 자본금: {self.initial_capital:,.2f}")
+            report.append(f"최종 자본금: {self.equity_curve[-1]['equity']:,.2f}")
+            report.append("")
+            
+            report.append("=== 성과 지표 ===")
+            for metric, value in self.results.items():
+                if isinstance(value, float):
+                    report.append(f"{metric}: {value:.4f}")
+                else:
+                    report.append(f"{metric}: {value}")
+                    
+            report.append("")
+            report.append(f"총 거래 횟수: {len(self.trades)}")
+            
+            return "\n".join(report)
+            
+        except Exception as e:
+            self.logger.error(f"리포트 생성 실패: {str(e)}")
+            raise
+            
+    def plot_results(self):
+        """
+        백테스팅 결과 시각화
+        """
+        try:
+            # 자본금 곡선
+            equity_df = pd.DataFrame(self.equity_curve)
+            plt.figure(figsize=(12, 6))
+            plt.plot(equity_df['timestamp'], equity_df['equity'])
+            plt.title('Equity Curve')
+            plt.xlabel('Date')
+            plt.ylabel('Equity')
+            plt.grid(True)
+            plt.show()
+            
+            # 거래 기록
+            trades_df = pd.DataFrame(self.trades)
+            if len(trades_df) > 0:
+                plt.figure(figsize=(12, 6))
+                plt.scatter(trades_df['timestamp'], trades_df['price'], 
+                           c=['g' if x > 0 else 'r' for x in trades_df['pnl']])
+                plt.title('Trade Points')
+                plt.xlabel('Date')
+                plt.ylabel('Price')
+                plt.grid(True)
+                plt.show()
+                
+        except Exception as e:
+            self.logger.error(f"결과 시각화 실패: {str(e)}")
+            raise
+            
+    def optimize_parameters(self, param_grid: Dict[str, List[Any]]) -> Dict[str, Any]:
+        """
+        전략 파라미터 최적화
+        
+        Args:
+            param_grid (Dict[str, List[Any]]): 파라미터 그리드
+            
+        Returns:
+            Dict[str, Any]: 최적 파라미터
+        """
+        try:
+            best_params = None
+            best_sharpe = float('-inf')
+            
+            # 파라미터 조합 생성
+            from itertools import product
+            param_combinations = [dict(zip(param_grid.keys(), v)) 
+                                for v in product(*param_grid.values())]
+            
+            # 각 조합에 대해 백테스팅 실행
+            for params in param_combinations:
+                # 전략 파라미터 업데이트
+                self.strategy.set_parameters(params)
+                
+                # 백테스팅 실행
+                self.run_backtest()
+                
+                # 성과 비교
+                if self.results['sharpe_ratio'] > best_sharpe:
+                    best_sharpe = self.results['sharpe_ratio']
+                    best_params = params
+                    
+            return best_params
+            
+        except Exception as e:
+            self.logger.error(f"파라미터 최적화 실패: {str(e)}")
+            raise 
