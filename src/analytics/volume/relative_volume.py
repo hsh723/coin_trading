@@ -1,0 +1,28 @@
+import pandas as pd
+import numpy as np
+from typing import Dict
+from dataclasses import dataclass
+
+@dataclass
+class VolumeMetrics:
+    relative_volume: float
+    volume_trend: str
+    unusual_volume: bool
+    volume_profile: Dict[str, float]
+
+class RelativeVolumeAnalyzer:
+    def __init__(self, lookback_period: int = 20):
+        self.lookback_period = lookback_period
+        
+    def analyze_volume(self, market_data: pd.DataFrame) -> VolumeMetrics:
+        """상대 거래량 분석"""
+        avg_volume = market_data['volume'].rolling(window=self.lookback_period).mean()
+        current_volume = market_data['volume'].iloc[-1]
+        relative_vol = current_volume / avg_volume.iloc[-1]
+        
+        return VolumeMetrics(
+            relative_volume=relative_vol,
+            volume_trend=self._determine_volume_trend(market_data),
+            unusual_volume=relative_vol > 2.0,
+            volume_profile=self._calculate_volume_profile(market_data)
+        )

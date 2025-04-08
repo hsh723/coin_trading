@@ -1,9 +1,11 @@
 import psutil
 import time
+import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
 from collections import deque
 from ..utils.logger import setup_logger
+import logging
 
 logger = setup_logger()
 
@@ -42,6 +44,8 @@ class ResourceMonitor:
         
         # 마지막 체크 시간
         self.last_check = None
+
+        self.logger = logging.getLogger(__name__)
     
     def start_monitoring(self):
         """리소스 모니터링을 시작합니다."""
@@ -276,4 +280,16 @@ class ResourceMonitor:
                 'max': max(self.disk_history) if self.disk_history else 0,
                 'min': min(self.disk_history) if self.disk_history else 0
             }
-        } 
+        }
+
+    async def monitor_resources(self) -> Dict[str, float]:
+        """시스템 리소스 모니터링"""
+        metrics = {
+            'cpu_usage': psutil.cpu_percent(interval=1),
+            'memory_usage': psutil.virtual_memory().percent,
+            'disk_usage': psutil.disk_usage('/').percent,
+            'network_io': self._get_network_usage()
+        }
+        
+        await self._check_thresholds(metrics)
+        return metrics

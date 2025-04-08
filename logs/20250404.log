@@ -1,6 +1,0 @@
-2025-04-04 01:58:04,146 - trading_bot - INFO - 데이터베이스 초기화 완료
-2025-04-04 02:02:17,929 - trading_bot - INFO - 데이터베이스 초기화 완료
-2025-04-04 02:04:06,245 - trading_bot - INFO - 데이터베이스 초기화 완료
-2025-04-04 02:05:24,899 - trading_bot - INFO - 데이터베이스 초기화 완료
-2025-04-04 02:05:24,905 - binance_exchange - INFO - Binance 거래소 초기화 완료
-2025-04-04 02:05:25,608 - binance_exchange - INFO - BTC/USDT OHLCV 데이터 조회 완료
