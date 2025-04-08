@@ -90,7 +90,8 @@ coin_trading/
 │   ├── utils/
 │   │   ├── config.py
 │   │   ├── logger.py
-│   │   └── performance_monitor.py
+│   │   ├── performance_monitor.py
+│   │   └── data_loader.py
 │   ├── api/
 │   │   └── api_manager.py
 │   ├── backup/
@@ -107,45 +108,87 @@ coin_trading/
 ├── config/
 │   └── config.yaml
 ├── data/
-│   └── market_data.csv
+│   ├── market_data.csv
+│   └── historical_data/
 ├── logs/
+│   ├── app.log
+│   └── performance.log
 ├── backup/
+│   ├── database/
+│   ├── config/
+│   ├── logs/
+│   └── strategies/
+├── tests/
+│   ├── test_technical_analyzer.py
+│   ├── test_backtest_engine.py
+│   └── test_performance_monitor.py
 ├── requirements.txt
 ├── .env
+├── .env.example
+├── .gitignore
 └── streamlit_app.py
 ```
 
 ## 주요 모듈 설명
 
-### 1. 분석 모듈
+### 1. 분석 모듈 (`src/analysis/`)
 - `technical_analyzer.py`: 기술적 지표 계산 및 분석
 - `self_learning.py`: 머신러닝 기반 시장 분석
 
-### 2. 전략 모듈
+### 2. 전략 모듈 (`src/strategy/`)
 - `base_strategy.py`: 기본 전략 클래스
 - `portfolio_manager.py`: 포트폴리오 관리
 
-### 3. 백테스팅 모듈
+### 3. 백테스팅 모듈 (`src/backtest/`)
 - `backtest_engine.py`: 백테스팅 엔진
 - `backtest_analyzer.py`: 백테스팅 결과 분석
 
-### 4. 유틸리티 모듈
+### 4. 유틸리티 모듈 (`src/utils/`)
 - `config.py`: 설정 관리
 - `logger.py`: 로깅 시스템
 - `performance_monitor.py`: 시스템 성능 모니터링
+- `data_loader.py`: 데이터 로딩 및 전처리
 
-### 5. API 모듈
+### 5. API 모듈 (`src/api/`)
 - `api_manager.py`: 거래소 API 통합
 
-### 6. 백업 모듈
+### 6. 백업 모듈 (`src/backup/`)
 - `backup_manager.py`: 데이터 백업 및 복구
 
-### 7. 최적화 모듈
+### 7. 최적화 모듈 (`src/optimization/`)
 - `optimizer.py`: 전략 파라미터 최적화
 
-### 8. 알림 모듈
+### 8. 알림 모듈 (`src/notification/`)
 - `telegram_notifier.py`: 텔레그램 알림
 - `notification_manager.py`: 알림 규칙 관리
+
+### 9. 데이터베이스 모듈 (`src/database/`)
+- `database_manager.py`: 데이터베이스 관리
+
+### 10. 거래소 모듈 (`src/exchange/`)
+- `binance_exchange.py`: 바이낸스 거래소 통합
+
+### 11. 테스트 모듈 (`tests/`)
+- `test_technical_analyzer.py`: 기술적 분석 테스트
+- `test_backtest_engine.py`: 백테스팅 엔진 테스트
+- `test_performance_monitor.py`: 성능 모니터링 테스트
+
+### 12. 설정 파일 (`config/`)
+- `config.yaml`: 애플리케이션 설정
+
+### 13. 데이터 디렉토리 (`data/`)
+- `market_data.csv`: 시장 데이터
+- `historical_data/`: 과거 데이터 저장
+
+### 14. 로그 디렉토리 (`logs/`)
+- `app.log`: 애플리케이션 로그
+- `performance.log`: 성능 모니터링 로그
+
+### 15. 백업 디렉토리 (`backup/`)
+- `database/`: 데이터베이스 백업
+- `config/`: 설정 파일 백업
+- `logs/`: 로그 파일 백업
+- `strategies/`: 전략 파일 백업
 
 ## 라이센스
 
