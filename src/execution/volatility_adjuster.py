@@ -1,20 +1,30 @@
 import pandas as pd
-import numpy as np
-from typing import Dict
+from typing import Dict, List
+from dataclasses import dataclass
+
+@dataclass
+class VolatilityAdjustment:
+    size_multiplier: float
+    execution_speed: str
+    price_buffer: float
+    slippage_tolerance: float
 
 class VolatilityAdjuster:
-    def __init__(self, config: Dict):
-        self.base_size = config.get('base_order_size', 1.0)
-        self.vol_window = config.get('volatility_window', 24)
-        self.vol_target = config.get('volatility_target', 0.02)
+    def __init__(self, config: Dict = None):
+        self.config = config or {
+            'base_speed': 'normal',
+            'vol_threshold': 0.02,
+            'adjustment_factor': 1.5
+        }
         
-    def adjust_execution_params(self, market_data: pd.DataFrame) -> Dict:
+    async def calculate_adjustments(self, market_data: pd.DataFrame) -> VolatilityAdjustment:
         """변동성 기반 실행 파라미터 조정"""
         current_vol = self._calculate_current_volatility(market_data)
-        vol_ratio = current_vol / self.vol_target
+        vol_ratio = current_vol / self.config['vol_threshold']
         
-        return {
-            'order_size': self._adjust_size(vol_ratio),
-            'execution_speed': self._adjust_speed(vol_ratio),
-            'slippage_tolerance': self._adjust_slippage(vol_ratio)
-        }
+        return VolatilityAdjustment(
+            size_multiplier=self._adjust_size_by_volatility(vol_ratio),
+            execution_speed=self._determine_execution_speed(vol_ratio),
+            price_buffer=self._calculate_price_buffer(current_vol),
+            slippage_tolerance=self._adjust_slippage_tolerance(vol_ratio)
+        )
