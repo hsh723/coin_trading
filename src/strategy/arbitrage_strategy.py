@@ -1,25 +1,36 @@
 from typing import Dict, List
+from dataclasses import dataclass
 import pandas as pd
 from .base import BaseStrategy
 
+@dataclass
+class ArbitrageOpportunity:
+    pair_id: str
+    exchange_a: str
+    exchange_b: str
+    price_difference: float
+    estimated_profit: float
+    execution_risk: float
+
 class ArbitrageStrategy(BaseStrategy):
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict = None):
         super().__init__()
-        self.min_spread = config.get('min_spread', 0.001)  # 최소 스프레드
-        self.max_exposure = config.get('max_exposure', 100000)  # 최대 노출도
+        self.config = config or {
+            'min_profit_threshold': 0.002,  # 0.2%
+            'max_execution_time': 5,  # seconds
+            'risk_threshold': 0.8
+        }
         
-    async def find_opportunities(self, prices: Dict[str, float]) -> List[Dict]:
+    async def find_opportunities(self, market_data: Dict) -> List[ArbitrageOpportunity]:
         """차익거래 기회 탐색"""
         opportunities = []
-        exchanges = list(prices.keys())
+        exchange_pairs = self._get_exchange_pairs(market_data)
         
-        for i in range(len(exchanges)):
-            for j in range(i + 1, len(exchanges)):
-                spread = prices[exchanges[j]] / prices[exchanges[i]] - 1
-                if spread > self.min_spread:
-                    opportunities.append({
-                        'buy_exchange': exchanges[i],
-                        'sell_exchange': exchanges[j],
-                        'spread': spread
-                    })
-        return opportunities
+        for pair in exchange_pairs:
+            if profit := self._calculate_profit_opportunity(pair, market_data):
+                if self._validate_opportunity(profit):
+                    opportunities.append(profit)
+                    
+        return sorted(opportunities, 
+                     key=lambda x: x.estimated_profit, 
+                     reverse=True)

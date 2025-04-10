@@ -1,7 +1,8 @@
 from typing import Dict
 import pandas as pd
-from .base import BaseStrategy
+from .base_strategy import BaseStrategy, StrategyResult
 from ..analysis.technical import TechnicalAnalyzer
+import numpy as np
 
 class BreakoutStrategy(BaseStrategy):
     def __init__(self, params: Dict):
@@ -9,19 +10,27 @@ class BreakoutStrategy(BaseStrategy):
         self.tech_analyzer = TechnicalAnalyzer()
         self.lookback_period = params.get('lookback_period', 20)
         
-    def generate_signals(self, data: pd.DataFrame) -> Dict[str, str]:
-        """브레이크아웃 신호 생성"""
-        high = data['high'].rolling(window=self.lookback_period).max()
-        low = data['low'].rolling(window=self.lookback_period).min()
+    async def analyze_market(self, market_data: Dict) -> Dict:
+        """시장 분석"""
+        highs = market_data['high']
+        lows = market_data['low']
         
-        signals = {}
-        current_price = data['close'].iloc[-1]
+        return {
+            'resistance': self._find_resistance_levels(highs),
+            'support': self._find_support_levels(lows),
+            'volatility': self._calculate_volatility(market_data),
+            'volume_confirm': self._check_volume_confirmation(market_data)
+        }
         
-        if current_price > high.iloc[-2]:  # 상향 브레이크아웃
-            signals['action'] = 'BUY'
-        elif current_price < low.iloc[-2]:  # 하향 브레이크아웃
-            signals['action'] = 'SELL'
-        else:
-            signals['action'] = 'HOLD'
+    async def generate_signals(self, analysis: Dict) -> Dict:
+        current_price = analysis['current_price']
+        
+        if self._is_resistance_breakout(current_price, analysis):
+            return StrategyResult(
+                signal='buy',
+                confidence=self._calculate_breakout_strength(analysis),
+                params={'type': 'resistance_break'},
+                metadata={'timeframe': self.config['timeframe']}
+            )
             
-        return signals
+        return StrategyResult(signal='hold', confidence=0.0, params={}, metadata={})

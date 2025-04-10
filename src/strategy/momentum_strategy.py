@@ -1,7 +1,5 @@
 from typing import Dict
-import pandas as pd
-from .base import BaseStrategy
-from ..analysis.technical import TechnicalAnalyzer
+from .base_strategy import BaseStrategy, StrategyResult
 
 class MomentumStrategy(BaseStrategy):
     def __init__(self, params: Dict):
@@ -11,17 +9,14 @@ class MomentumStrategy(BaseStrategy):
         self.rsi_overbought = params.get('rsi_overbought', 70)
         self.rsi_oversold = params.get('rsi_oversold', 30)
     
-    def generate_signals(self, data: pd.DataFrame) -> Dict[str, str]:
-        """모멘텀 기반 거래 신호 생성"""
-        self.tech_analyzer.set_data(data)
-        rsi = self.tech_analyzer.calculate_rsi(self.rsi_period)
+    async def generate_signal(self, market_data: Dict) -> StrategyResult:
+        """모멘텀 기반 신호 생성"""
+        momentum = self._calculate_momentum(market_data)
+        signal = 'buy' if momentum > self.config['momentum_threshold'] else 'sell'
         
-        signals = {}
-        if rsi.iloc[-1] < self.rsi_oversold:
-            signals['action'] = 'BUY'
-        elif rsi.iloc[-1] > self.rsi_overbought:
-            signals['action'] = 'SELL'
-        else:
-            signals['action'] = 'HOLD'
-            
-        return signals
+        return StrategyResult(
+            signal=signal,
+            confidence=abs(momentum),
+            params={'momentum': momentum},
+            metadata={'timeframe': '1h'}
+        )

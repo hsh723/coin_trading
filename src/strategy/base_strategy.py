@@ -4,15 +4,26 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass
 import pandas as pd
 from src.analysis.indicators.technical import TechnicalIndicators
 from src.utils.logger import get_logger
 
+@dataclass
+class StrategyResult:
+    signal: str  # 'buy', 'sell', 'hold'
+    confidence: float
+    params: Dict
+    metadata: Dict
+
 class BaseStrategy(ABC):
     """전략 기본 클래스"""
     
-    def __init__(self):
+    def __init__(self, strategy_config: Dict = None):
+        self.config = strategy_config or {}
+        self.position = None
+        self.last_signal = None
         self.logger = get_logger(__name__)
         self._state: Dict[str, Any] = {}
         
@@ -29,6 +40,11 @@ class BaseStrategy(ABC):
     @abstractmethod
     def generate_signals(self, data: pd.DataFrame) -> Dict[str, Any]:
         """매매 신호 생성"""
+        pass
+        
+    @abstractmethod
+    async def generate_signal(self, market_data: Dict) -> StrategyResult:
+        """전략 신호 생성"""
         pass
         
     @abstractmethod
@@ -94,9 +110,6 @@ class BaseStrategy(ABC):
         Args:
             key (str): 파라미터 키
             default (Any): 기본값
-            
-        Returns:
-            Any: 파라미터 값
         """
         return self.config.get("parameters", {}).get(key, default)
         
@@ -110,4 +123,4 @@ class BaseStrategy(ABC):
         """
         if "parameters" not in self.config:
             self.config["parameters"] = {}
-        self.config["parameters"][key] = value 
+        self.config["parameters"][key] = value

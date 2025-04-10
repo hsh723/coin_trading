@@ -1,6 +1,7 @@
 from typing import Dict
+from .base_strategy import BaseStrategy, StrategyResult
 import pandas as pd
-from .base import BaseStrategy
+import numpy as np
 from ..analysis.technical import TechnicalAnalyzer
 
 class MeanReversionStrategy(BaseStrategy):
@@ -10,18 +11,20 @@ class MeanReversionStrategy(BaseStrategy):
         self.lookback_period = params.get('lookback_period', 20)
         self.std_dev_threshold = params.get('std_dev_threshold', 2.0)
         
-    def generate_signals(self, data: pd.DataFrame) -> Dict[str, str]:
-        """평균회귀 기반 거래 신호 생성"""
-        sma = data['close'].rolling(window=self.lookback_period).mean()
-        std_dev = data['close'].rolling(window=self.lookback_period).std()
+    async def generate_signal(self, market_data: Dict) -> StrategyResult:
+        """평균 회귀 전략 신호 생성"""
+        zscore = self._calculate_zscore(market_data)
         
-        upper_band = sma + (std_dev * self.std_dev_threshold)
-        lower_band = sma - (std_dev * self.std_dev_threshold)
-        
-        current_price = data['close'].iloc[-1]
-        
-        if current_price > upper_band.iloc[-1]:
-            return {'action': 'SELL'}
-        elif current_price < lower_band.iloc[-1]:
-            return {'action': 'BUY'}
-        return {'action': 'HOLD'}
+        if zscore > self.config['zscore_threshold']:
+            signal = 'sell'
+        elif zscore < -self.config['zscore_threshold']:
+            signal = 'buy'
+        else:
+            signal = 'hold'
+            
+        return StrategyResult(
+            signal=signal,
+            confidence=abs(zscore),
+            params={'zscore': zscore},
+            metadata={'timeframe': '1h'}
+        )

@@ -49,6 +49,17 @@ src/
 │   ├── volume/
 │   ├── correlation/
 │   └── risk/
+├── data/                   # 데이터 파이프라인
+│   ├── collectors/        # 데이터 수집
+│   ├── processors/        # 데이터 처리
+│   ├── storage/          # 데이터 저장
+│   ├── validation/       # 데이터 검증
+│   └── pipeline/         # 파이프라인 관리
+├── alerts/                # 알림 시스템
+│   ├── handlers/         # 알림 처리
+│   ├── channels/         # 알림 채널
+│   ├── filters/          # 알림 필터
+│   └── templates/        # 알림 템플릿
 └── real_time/             # 실시간 처리
     ├── market_data/
     ├── order_flow/
@@ -71,6 +82,18 @@ src/
 - 시장 분석
 - 거래량 분석
 - 상관관계 분석
+
+### 데이터 파이프라인 시스템
+- 실시간 데이터 수집
+- 데이터 정제 및 변환
+- 스트림 처리
+- 데이터 저장 및 캐싱
+
+### 알림 시스템
+- 알림 우선순위 관리
+- 다중 채널 통합
+- 알림 에스컬레이션
+- 알림 템플릿 관리
 
 ### 실시간 처리
 - 실시간 시장 데이터 처리
@@ -128,7 +151,20 @@ src/
 - `correlation/`: 상관관계 분석
 - `risk/`: 리스크 분석
 
-### 1.4 실시간 처리 모듈 (`src/real_time/`)
+### 1.4 데이터 파이프라인 모듈 (`src/data/`)
+- `collectors/`: 데이터 수집
+- `processors/`: 데이터 처리
+- `storage/`: 데이터 저장
+- `validation/`: 데이터 검증
+- `pipeline/`: 파이프라인 관리
+
+### 1.5 알림 모듈 (`src/alerts/`)
+- `handlers/`: 알림 처리
+- `channels/`: 알림 채널
+- `filters/`: 알림 필터
+- `templates/`: 알림 템플릿
+
+### 1.6 실시간 처리 모듈 (`src/real_time/`)
 - `market_data/`: 실시간 시장 데이터
 - `order_flow/`: 주문 흐름 관리
 - `execution/`: 실행 모니터링
