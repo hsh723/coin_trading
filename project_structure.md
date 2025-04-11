@@ -242,3 +242,26 @@ src/
   - 웹 인터페이스
   - 모듈 통합
   - 이벤트 루프 관리
+
+# 프로젝트 구조 상세
+
+## 전략 시스템 (`src/strategy/`)
+```
+strategy/
+├── base/                   # 기본 전략 프레임워크
+├── technical/             # 기술적 분석 전략
+├── ml/                    # 머신러닝 전략
+├── statistical/           # 통계적 전략
+├── market_neutral/        # 중립 전략
+└── adaptive/             # 적응형 전략
+```
+
+## 실행 시스템 (`src/execution/`)
+```
+execution/
+├── engine/               # 실행 엔진
+├── routing/             # 주문 라우팅
+├── cost/                # 비용 분석
+├── position/            # 포지션 관리
+└── monitoring/          # 실시간 모니터링
+```

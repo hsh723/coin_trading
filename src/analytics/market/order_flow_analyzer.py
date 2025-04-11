@@ -1,31 +1,28 @@
+import numpy as np
 from typing import Dict, List
 import pandas as pd
 from dataclasses import dataclass
 
 @dataclass
 class OrderFlowMetrics:
+    order_imbalance: float
     buy_pressure: float
     sell_pressure: float
-    net_flow: float
-    trade_imbalance: float
-    large_trades: List[Dict]
+    flow_strength: float
 
 class OrderFlowAnalyzer:
-    def __init__(self, config: Dict = None):
-        self.config = config or {
-            'large_trade_threshold': 100000,
-            'timeframe': '1m'
-        }
+    def __init__(self, window_size: int = 50):
+        self.window_size = window_size
         
-    def analyze_order_flow(self, trades: pd.DataFrame) -> OrderFlowMetrics:
+    async def analyze_flow(self, order_data: Dict) -> OrderFlowMetrics:
         """주문 흐름 분석"""
-        buy_trades = trades[trades['side'] == 'buy']
-        sell_trades = trades[trades['side'] == 'sell']
+        buy_orders = self._calculate_buy_orders(order_data)
+        sell_orders = self._calculate_sell_orders(order_data)
+        total_flow = buy_orders + sell_orders
         
         return OrderFlowMetrics(
-            buy_pressure=self._calculate_pressure(buy_trades),
-            sell_pressure=self._calculate_pressure(sell_trades),
-            net_flow=buy_trades['volume'].sum() - sell_trades['volume'].sum(),
-            trade_imbalance=self._calculate_imbalance(trades),
-            large_trades=self._identify_large_trades(trades)
+            order_imbalance=(buy_orders - sell_orders) / total_flow,
+            buy_pressure=buy_orders / total_flow,
+            sell_pressure=sell_orders / total_flow,
+            flow_strength=self._calculate_flow_strength(order_data)
         )

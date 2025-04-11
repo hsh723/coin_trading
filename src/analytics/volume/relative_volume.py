@@ -26,3 +26,25 @@ class RelativeVolumeAnalyzer:
             unusual_volume=relative_vol > 2.0,
             volume_profile=self._calculate_volume_profile(market_data)
         )
+
+    def _determine_volume_trend(self, market_data: pd.DataFrame) -> str:
+        """거래량 추세 판단"""
+        recent_volumes = market_data['volume'].tail(self.lookback_period)
+        volume_sma = recent_volumes.rolling(window=5).mean()
+        
+        if volume_sma.iloc[-1] > volume_sma.iloc[-2]:
+            return "increasing"
+        elif volume_sma.iloc[-1] < volume_sma.iloc[-2]:
+            return "decreasing"
+        return "stable"
+    
+    def _calculate_volume_profile(self, market_data: pd.DataFrame) -> Dict[str, float]:
+        """거래량 프로파일 계산"""
+        recent_data = market_data.tail(self.lookback_period)
+        total_volume = recent_data['volume'].sum()
+        
+        return {
+            'average_volume': recent_data['volume'].mean(),
+            'volume_volatility': recent_data['volume'].std() / recent_data['volume'].mean(),
+            'volume_concentration': total_volume / len(recent_data)
+        }
