@@ -4,13 +4,32 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .env
+.venv
+venv/
+ENV/
 
 # IDE
 .vscode/
 .idea/
 *.swp
+*.swo
 
 # Logs
 logs/
@@ -32,3 +51,40 @@ build/
 
 # Project specific
 config/secrets.yaml
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Keys and certificates
+*.pem
+*.key
+*.cert
+*.crt
+
+# Database
+*.db
+*.sqlite3
+
+# Coverage
+.coverage
+htmlcov/
+
+# Test
+.pytest_cache/
+.tox/
+
+# Trading bot key
+trading-bot-key.pem
+
+# Environment-specific configurations
+.env.development
+.env.production
+.env.key
+
+# Execution and model deployment automation configurations
+config/execution.json
+config/model_deployment_automation.json

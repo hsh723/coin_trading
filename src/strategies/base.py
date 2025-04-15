@@ -11,8 +11,9 @@ from src.utils.logger import setup_logger
 from src.indicators.basic import TechnicalIndicators
 from enum import Enum
 from dataclasses import dataclass
+import logging
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 
 class TrendType(Enum):
     """추세 유형"""
@@ -67,7 +68,7 @@ class BaseStrategy(ABC):
         """
         전략 초기화
         """
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
         self.indicators = TechnicalIndicators()
         self.name = self.__class__.__name__
         
@@ -413,3 +414,7 @@ class BaseStrategy(ABC):
             Dict[str, float]: 거래 결과
         """
         raise NotImplementedError
+
+    async def execute(self, *args, **kwargs):
+        """전략 실행"""
+        raise NotImplementedError("execute 메서드를 구현해야 합니다")

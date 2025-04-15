@@ -16,9 +16,42 @@ import signal
 from src.utils.api_manager import APIManager
 from src.utils.telegram import TelegramNotifier
 from src.utils.config import config_manager
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
+import json
+import os
+import logging
+from src.execution.execution_manager import ExecutionManager
+from config.env_loader import EnvLoader
 
-# 로거 설정
-logger = setup_logger(level='DEBUG')
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+app = FastAPI()
+
+class PredictionRequest(BaseModel):
+    data: dict
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Trading service is running"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+@app.post("/predict")
+async def predict(request: PredictionRequest):
+    try:
+        # 여기에 실제 예측 로직 추가
+        return {"status": "success", "prediction": request.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 async def fetch_market_data(
     exchange: BinanceExchange,
@@ -254,17 +287,47 @@ class TradingBot:
         error_type = type(error).__name__
         return error_type in critical_errors
 
-def main():
-    """메인 함수"""
+async def main():
     try:
-        bot = TradingBot()
-        bot.start()
+        # 환경 설정 로드
+        env_loader = EnvLoader()
+        config = env_loader.load_config()
+        
+        # 실행 관리자 초기화
+        execution_manager = ExecutionManager(config=config, test_mode=True)  # 테스트 모드로 실행
+        
+        # 초기화
+        if not await execution_manager.initialize():
+            logger.error("실행 관리자 초기화 실패")
+            return
+            
+        logger.info("실행 관리자가 성공적으로 초기화되었습니다")
+        
+        # 예시: 시장 데이터 조회
+        market_data = await execution_manager.get_market_data("BTC/USDT")
+        logger.info(f"시장 데이터: {market_data}")
+        
+        # 예시: 포지션 조회
+        position = await execution_manager.get_position("BTC/USDT")
+        logger.info(f"포지션 정보: {position}")
+        
+        # 예시: 성능 메트릭 조회
+        metrics = await execution_manager.get_performance_metrics()
+        logger.info(f"성능 메트릭: {metrics}")
+        
     except Exception as e:
-        logger.error(f"프로그램 실행 중 오류: {str(e)}")
-        sys.exit(1)
+        logger.error(f"실행 중 오류 발생: {str(e)}")
+    finally:
+        # 종료
+        await execution_manager.close()
 
 if __name__ == "__main__":
-    # Windows에서 SelectorEventLoop 사용
-    if sys.platform == 'win32':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    main() 
+    # FastAPI 서버 실행
+    uvicorn.run(
+        app,
+        host="127.0.0.1",  # localhost
+        port=8000,
+        log_level="info"
+    )
+
+    asyncio.run(main()) 

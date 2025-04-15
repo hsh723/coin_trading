@@ -14,6 +14,15 @@ from datetime import datetime, timedelta
 import logging
 from src.utils.logger import get_logger
 from src.utils.database import DatabaseManager
+import os
+import sqlite3
+from pathlib import Path
+import requests
+from concurrent.futures import ThreadPoolExecutor
+import queue
+import asyncio
+import websockets
+import aiohttp
 
 class DataCollector:
     """데이터 수집기 클래스"""

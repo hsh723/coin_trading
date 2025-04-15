@@ -1,18 +1,34 @@
-# 베이스 이미지
-FROM python:3.10-slim
+FROM python:3.9-slim
 
-# 작업 디렉토리 설정
 WORKDIR /app
 
-# Python 패키지 설치
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Copy requirements and install Python packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 소스 코드 복사
+# Copy application code
 COPY . .
 
-# 환경 변수 설정
-ENV PYTHONUNBUFFERED=1
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    MODEL_ENV=production \
+    PYTHONPATH=/app \
+    LOG_LEVEL=INFO \
+    LOG_DIR=/app/logs \
+    PROMETHEUS_PORT=9090 \
+    GRAFANA_PORT=3000
 
-# 실행 명령
-CMD ["python", "run_trading.py"]
+# Expose port
+EXPOSE 8000
+
+# Run the application
+CMD ["python", "src/main.py"]

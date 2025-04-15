@@ -10,46 +10,48 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import json
 from ..utils.database import DatabaseManager
+import sys
 
-def setup_logger(name: str = "coin_trading") -> logging.Logger:
+def setup_logger(name: str, level: str = 'INFO') -> logging.Logger:
     """
-    로거 설정
+    로거를 설정하고 반환합니다.
     
     Args:
-        name (str): 로거 이름
+        name: 로거 이름
+        level: 로깅 레벨 (기본값: INFO)
         
     Returns:
-        logging.Logger: 설정된 로거
+        logging.Logger: 설정된 로거 객체
     """
-    # 로그 디렉토리 생성
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    
-    # 로그 파일 경로 설정
-    log_file = log_dir / f"{name}_{datetime.now().strftime('%Y%m%d')}.log"
-    
-    # 로거 생성
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
     
-    # 파일 핸들러 설정
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.INFO)
+    # 로깅 레벨이 유효하지 않은 경우 INFO로 fallback
+    try:
+        logger.setLevel(getattr(logging, level.upper()))
+    except AttributeError:
+        logger.setLevel(logging.INFO)
+        logger.warning(f"Invalid logging level '{level}'. Falling back to INFO.")
     
-    # 콘솔 핸들러 설정
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    
-    # 포맷터 설정
+    # 로그 포맷 설정
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
     
-    # 핸들러 추가
-    logger.addHandler(file_handler)
+    # 콘솔 핸들러 추가
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+    
+    # 로그 파일 핸들러 추가
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    file_handler = logging.FileHandler(
+        os.path.join(log_dir, f'{name}.log')
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
     
     return logger
 
@@ -115,7 +117,7 @@ class TradeLogger:
             db (DatabaseManager): 데이터베이스 관리자
         """
         self.db = db
-        self.logger = setup_logger(__name__)
+        self.logger = setup_logger('model_service')
         
     async def log_trade_entry(self, trade: Dict[str, Any]):
         """
@@ -306,4 +308,7 @@ class TradeLogger:
                 json.dump(logs, f, indent=4, default=str)
                 
         except Exception as e:
-            self.logger.error(f"로그 내보내기 실패: {str(e)}") 
+            self.logger.error(f"로그 내보내기 실패: {str(e)}")
+
+# 전역 로거 객체 생성
+logger = setup_logger('model_service') 

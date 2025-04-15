@@ -8,8 +8,9 @@ from datetime import datetime
 from src.utils.logger import setup_logger
 import pandas as pd
 from .base import ExchangeBase
+import logging
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 
 class BinanceExchange(ExchangeBase):
     """

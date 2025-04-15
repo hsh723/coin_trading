@@ -4,10 +4,10 @@
 
 from typing import Dict, Any, List
 from datetime import datetime
-from src.utils.logger import setup_logger
+import logging
 import numpy as np
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 
 class RiskManager:
     """
@@ -15,36 +15,20 @@ class RiskManager:
     포지션, 손실, 드로다운 등을 관리
     """
     
-    def __init__(
-        self,
-        initial_capital: float,
-        risk_per_trade: float,
-        max_positions: int,
-        daily_loss_limit: float,
-        max_drawdown: float
-    ):
-        """
-        리스크 관리자 초기화
-        
-        Args:
-            initial_capital (float): 초기 자본금
-            risk_per_trade (float): 거래당 위험 비율
-            max_positions (int): 최대 포지션 수
-            daily_loss_limit (float): 일일 손실 한도
-            max_drawdown (float): 최대 드로다운
-        """
-        self.logger = logger
+    def __init__(self, config: dict = None):
+        self.config = config or {}
+        self.logger = logging.getLogger(__name__)
         
         # 자본금 관리
-        self.initial_capital = initial_capital
-        self.current_capital = initial_capital
-        self.peak_capital = initial_capital
+        self.initial_capital = self.config.get('initial_capital', 0.0)
+        self.current_capital = self.initial_capital
+        self.peak_capital = self.initial_capital
         
         # 리스크 파라미터
-        self.risk_per_trade = risk_per_trade
-        self.max_positions = max_positions
-        self.daily_loss_limit = daily_loss_limit
-        self.max_drawdown = max_drawdown
+        self.risk_per_trade = self.config.get('risk_per_trade', 0.0)
+        self.max_positions = self.config.get('max_positions', 0)
+        self.daily_loss_limit = self.config.get('daily_loss_limit', 0.0)
+        self.max_drawdown = self.config.get('max_drawdown', 0.0)
         
         # 포지션 관리
         self.positions: Dict[str, Dict[str, Any]] = {}
@@ -55,9 +39,9 @@ class RiskManager:
         self.last_reset_date = datetime.now().date()
 
         # 추가된 리스크 파라미터
-        self.max_position_size = 0.1
-        self.stop_loss_pct = 0.02
-        self.take_profit_pct = 0.03
+        self.max_position_size = self.config.get('max_position_size', 0.1)
+        self.stop_loss_pct = self.config.get('stop_loss_pct', 0.02)
+        self.take_profit_pct = self.config.get('take_profit_pct', 0.03)
         
     def get_capital(self) -> float:
         """

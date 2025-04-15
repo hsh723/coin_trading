@@ -38,6 +38,13 @@ src/
 │   ├── trade_simulator.py
 │   └── risk_evaluator.py
 ├── execution/               # 실행 시스템
+│   ├── strategies/         # 주문 실행 전략
+│   │   ├── base_strategy.py
+│   │   ├── twap_strategy.py
+│   │   ├── vwap_strategy.py
+│   │   ├── adaptive_strategy.py
+│   │   └── strategy_factory.py
+│   ├── examples/           # 전략 사용 예제
 │   ├── order_manager.py
 │   ├── smart_routing.py
 │   ├── trade_executor.py
@@ -77,6 +84,10 @@ src/
 - 스마트 주문 실행
 - 비용 최적화
 - 실시간 모니터링
+- 주문 실행 전략:
+  - TWAP: 시간 가중 평균 가격 전략
+  - VWAP: 거래량 가중 평균 가격 전략
+  - Adaptive: 시장 상황에 따라 동적으로 조정되는 전략
 
 ### 분석 시스템
 - 시장 분석
@@ -138,12 +149,23 @@ src/
 - `risk_evaluator.py`: 리스크 평가
 
 ### 1.2 실행 모듈 (`src/execution/`)
+- `strategies/`: 주문 실행 전략 모음
+  - `base_strategy.py`: 모든 전략의 기본 클래스
+  - `twap_strategy.py`: 시간 가중 평균 가격 전략
+  - `vwap_strategy.py`: 거래량 가중 평균 가격 전략
+  - `adaptive_strategy.py`: 적응형 실행 전략
+  - `strategy_factory.py`: 전략 생성 팩토리
+- `examples/`: 전략 사용 예제
 - `order_manager.py`: 주문 관리
 - `smart_routing.py`: 스마트 라우팅
 - `trade_executor.py`: 거래 실행
 - `cost_analyzer.py`: 비용 분석
 - `slippage_monitor.py`: 슬리피지 모니터링
 - `market_impact.py`: 시장 영향 분석
+- `execution_manager.py`: 실행 관리자
+- `strategy_optimizer.py`: 전략 최적화
+- `real_time_monitor.py`: 실시간 모니터링
+- `execution_quality_monitor.py`: 실행 품질 모니터링
 
 ### 1.3 분석 모듈 (`src/analytics/`)
 - `market/`: 시장 분석
@@ -243,25 +265,41 @@ src/
   - 모듈 통합
   - 이벤트 루프 관리
 
-# 프로젝트 구조 상세
+# 최근 업데이트된 컴포넌트
 
-## 전략 시스템 (`src/strategy/`)
-```
-strategy/
-├── base/                   # 기본 전략 프레임워크
-├── technical/             # 기술적 분석 전략
-├── ml/                    # 머신러닝 전략
-├── statistical/           # 통계적 전략
-├── market_neutral/        # 중립 전략
-└── adaptive/             # 적응형 전략
-```
+## 1. 주문 실행 전략 (`src/execution/strategies/`)
 
-## 실행 시스템 (`src/execution/`)
-```
-execution/
-├── engine/               # 실행 엔진
-├── routing/             # 주문 라우팅
-├── cost/                # 비용 분석
-├── position/            # 포지션 관리
-└── monitoring/          # 실시간 모니터링
-```
+### 1.1 기본 전략 클래스 (`base_strategy.py`)
+- 모든 실행 전략의 추상 기본 클래스
+- 표준 인터페이스 정의 (execute, cancel 메서드)
+- 공통 유틸리티 및 로깅 기능
+
+### 1.2 TWAP 전략 (`twap_strategy.py`)
+- 시간 가중 평균 가격 기반 주문 실행 전략
+- 주문을 일정 시간 간격으로 분할 실행
+- 시간대에 따른 가격 변동 위험 분산
+- 랜덤 요소를 적용하여 패턴 예측 방지
+
+### 1.3 VWAP 전략 (`vwap_strategy.py`)
+- 거래량 가중 평균 가격 기반 주문 실행 전략
+- 과거 거래량 프로필에 따라 주문 분할
+- 거래량이 많은 시간대에 더 큰 비중 할당
+- 유동성 최적화를 위한 실행 조정
+
+### 1.4 적응형 전략 (`adaptive_strategy.py`)
+- 시장 상황에 실시간으로 대응하는 동적 전략
+- 변동성, 스프레드, 유동성에 따른 실행 방법 조정
+- 시장 상황에 따른 적극/중립/소극적 전략 간 전환
+- 다양한 시장 지표 모니터링 및 분석
+
+### 1.5 전략 팩토리 (`strategy_factory.py`)
+- 다양한 실행 전략 인스턴스 생성 및 관리
+- 전략 설정 관리 및 사용자 정의 전략 등록
+- 전략 인스턴스 캐싱 및 자원 정리
+- 사용 가능한 전략 목록 제공
+
+## 2. 전략 예제 및 문서화 (`src/execution/examples/`)
+- 각 실행 전략 사용 예제
+- 다양한 시장 상황에 따른 전략 선택 가이드
+- 실제 거래 환경에서의 최적화 방법 설명
+- 성능 벤치마크 결과

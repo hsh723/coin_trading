@@ -10,7 +10,7 @@ from datetime import datetime
 from src.utils.logger import setup_logger
 from src.utils.config_loader import get_config
 
-logger = setup_logger()
+logger = setup_logger('trading_execution')
 
 class OrderExecutor:
     def __init__(

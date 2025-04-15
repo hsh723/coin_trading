@@ -6,11 +6,12 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional
 from datetime import datetime
+import logging
 from src.utils.logger import setup_logger
 from src.strategies.base import BaseStrategy
 from src.indicators.basic import TechnicalIndicators
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 
 class IntegratedStrategy(BaseStrategy):
     """
@@ -23,7 +24,7 @@ class IntegratedStrategy(BaseStrategy):
         전략 초기화
         """
         super().__init__()
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
         self.indicators = TechnicalIndicators()
         
     async def generate_signal(
@@ -144,3 +145,8 @@ class IntegratedStrategy(BaseStrategy):
         except Exception as e:
             self.logger.error(f"거래 신호 생성 실패: {str(e)}")
             return None 
+
+    async def execute(self, *args, **kwargs):
+        """전략 실행"""
+        self.logger.info("통합 전략 실행")
+        # 여기에 실제 전략 로직 구현 

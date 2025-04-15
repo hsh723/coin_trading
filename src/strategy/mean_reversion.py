@@ -4,7 +4,7 @@
 
 from typing import Dict, Any, Optional
 import pandas as pd
-from src.strategy.base_strategy import BaseStrategy
+from src.strategy.base_strategy import BaseStrategy, StrategyResult
 from src.analysis.indicators.technical import TechnicalIndicators
 from src.utils.logger import get_logger
 
@@ -39,6 +39,9 @@ class MeanReversionStrategy(BaseStrategy):
         # SMA 계산
         sma = TechnicalIndicators.calculate_sma(data['close'], self.sma_period)
         
+        # 표준편차 계산
+        std = data['close'].rolling(window=self.bb_period).std()
+        
         # 볼린저 밴드 계산
         bb_upper, bb_middle, bb_lower = TechnicalIndicators.calculate_bollinger_bands(
             data['close'],
@@ -49,8 +52,13 @@ class MeanReversionStrategy(BaseStrategy):
         # RSI 계산
         rsi = TechnicalIndicators.calculate_rsi(data['close'], self.rsi_period)
         
+        # Z-score 계산
+        zscore = (data['close'] - sma) / std
+        
         return {
             'sma': sma,
+            'std': std,
+            'zscore': zscore,
             'bb_upper': bb_upper,
             'bb_middle': bb_middle,
             'bb_lower': bb_lower,
@@ -113,3 +121,30 @@ class MeanReversionStrategy(BaseStrategy):
     def set_state(self, state: Dict[str, Any]) -> None:
         """전략 상태 설정"""
         self._state = state 
+
+    async def generate_signal(self, market_data: Dict) -> StrategyResult:
+        """전략 신호 생성"""
+        data = pd.DataFrame(market_data)
+        signals = self.generate_signals(data)
+        
+        if signals['buy_signal']:
+            return StrategyResult(
+                signal='buy',
+                confidence=0.8,
+                params=self.config,
+                metadata={'analysis': signals['analysis']}
+            )
+        elif signals['sell_signal']:
+            return StrategyResult(
+                signal='sell',
+                confidence=0.8,
+                params=self.config,
+                metadata={'analysis': signals['analysis']}
+            )
+        else:
+            return StrategyResult(
+                signal='hold',
+                confidence=0.5,
+                params=self.config,
+                metadata={'analysis': signals['analysis']}
+            ) 

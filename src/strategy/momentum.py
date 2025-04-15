@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 import pandas as pd
-from src.strategy.base_strategy import BaseStrategy
+from src.strategy.base_strategy import BaseStrategy, StrategyResult
 from src.analysis.indicators.technical import TechnicalIndicators
 from src.utils.logger import get_logger
 
@@ -99,3 +99,30 @@ class MomentumStrategy(BaseStrategy):
     def set_state(self, state: Dict[str, Any]) -> None:
         """전략 상태 설정"""
         self._state = state 
+
+    async def generate_signal(self, market_data: Dict) -> StrategyResult:
+        """전략 신호 생성"""
+        data = pd.DataFrame(market_data)
+        signals = self.generate_signals(data)
+        
+        if signals['buy_signal']:
+            return StrategyResult(
+                signal='buy',
+                confidence=0.8,
+                params=self.config,
+                metadata={'analysis': signals['analysis']}
+            )
+        elif signals['sell_signal']:
+            return StrategyResult(
+                signal='sell',
+                confidence=0.8,
+                params=self.config,
+                metadata={'analysis': signals['analysis']}
+            )
+        else:
+            return StrategyResult(
+                signal='hold',
+                confidence=0.5,
+                params=self.config,
+                metadata={'analysis': signals['analysis']}
+            ) 

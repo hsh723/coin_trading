@@ -12,7 +12,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/crypto_trader",
-    packages=find_packages(),
+    packages=find_packages(include=["src", "src.*"]),
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -46,6 +46,9 @@ setup(
         "streamlit>=1.10.0",
         "backtrader>=1.9.76.123",
         "empyrical>=0.5.5",
+        "scikit-learn>=0.24.2",
+        "pytest>=6.0.0",
+        "pytest-cov>=2.12.0",
     ],
     extras_require={
         "dev": [
